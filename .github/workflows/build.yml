@@ -25,7 +25,7 @@ jobs:
             binary_name: openaimock
           - os: darwin
             arch: amd64
-            runner: macos-13
+            runner: macos-15-intel
             artifact_name: openaimock-darwin-amd64
             binary_name: openaimock
           - os: darwin
