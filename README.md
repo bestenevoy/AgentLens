@@ -12,11 +12,23 @@
 
 ## 快速开始
 
-```bash
-# 构建
-go build -o openaimock.exe .
+### 从 Release 下载（推荐）
 
-# 运行
+到 [Releases 页面](../../releases) 下载对应平台的可执行文件：
+
+| 平台 | 文件 |
+|------|------|
+| Windows | `openaimock-windows-amd64.exe` |
+| Linux | `openaimock-linux-amd64` |
+| macOS (Intel) | `openaimock-darwin-amd64` |
+| macOS (Apple Silicon) | `openaimock-darwin-arm64` |
+
+下载后直接运行，无需安装 Go 环境。
+
+### 从源码构建
+
+```bash
+go build -o openaimock.exe .
 ./openaimock.exe
 ```
 
@@ -116,3 +128,20 @@ resp = client.chat.completions.create(
 ```
 
 `index.html` 通过 `//go:embed` 嵌入二进制，构建后为单文件，无需额外依赖。
+
+## CI/CD
+
+项目配置了 GitHub Actions（[.github/workflows/build.yml](.github/workflows/build.yml)）：
+
+- **触发条件**：推送 `v*` 格式的 tag（如 `v1.0.0`），或手动触发
+- **构建目标**：Windows / Linux / macOS (Intel + Apple Silicon)
+- **发布**：自动创建 GitHub Release，附带所有平台二进制
+
+发布新版本：
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+GitHub 会自动构建并发布 Release。
