@@ -1,0 +1,9 @@
+# Binary
+openaimock.exe
+openaimock.exe~
+
+# State (contains API keys)
+state.json
+
+# Go workspace
+*.tmp
