@@ -73,13 +73,13 @@
     /* Message card */
     .msg-card {
       border: 1px solid #1f232c; border-radius: 4px; padding: 8px;
-      margin-bottom: 6px; background: #0f1217; cursor: pointer;
+      margin-bottom: 6px; background: #0f1217;
     }
     .msg-card.role-user { border-left: 3px solid #7dd3fc; }
     .msg-card.role-assistant { border-left: 3px solid #4ade80; }
     .msg-card.role-system { border-left: 3px solid #fbbf24; }
     .msg-card.role-tool { border-left: 3px solid #f472b6; }
-    .msg-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; user-select: none; }
+    .msg-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; user-select: none; cursor: pointer; }
     .role-badge { padding: 1px 6px; border-radius: 2px; font-size: 11px; font-weight: 600; }
     .role-badge.role-user { background: #1e3a5f; color: #7dd3fc; }
     .role-badge.role-assistant { background: #1a3a2a; color: #4ade80; }
@@ -179,6 +179,16 @@
     .provider-item .name { font-weight: 600; color: #7dd3fc; }
     .provider-item .url { color: #6b7280; font-size: 11px; flex: 1; }
     .provider-item .actions { display: flex; gap: 4px; }
+
+    /* Header stats */
+    .stats { display: inline-flex; gap: 8px; align-items: center; font-size: 11px; color: #9ca3af; padding: 2px 8px; background: #14171d; border: 1px solid #1f232c; border-radius: 3px; }
+    .stats .stat-item { display: inline-flex; gap: 3px; align-items: center; }
+    .stats .stat-label { color: #6b7280; }
+    .stats .stat-val { font-weight: 600; }
+    .stats .stat-val.in { color: #7dd3fc; }
+    .stats .stat-val.out { color: #4ade80; }
+    .stats .stat-val.cache { color: #fbbf24; }
+    .stats .sep { color: #2a2f3a; }
   </style>
 </head>
 <body>
@@ -195,6 +205,7 @@
         <select id="provider-select"><option value="">(未选择)</option></select>
       </label>
       <button id="manage-providers-btn">管理 Provider</button>
+      <span id="stats" class="stats"></span>
       <label><input type="checkbox" id="auto-refresh" checked> 自动</label>
       <button id="refresh-btn">刷新</button>
       <button id="clear-btn" class="danger small">清空</button>
@@ -255,6 +266,19 @@
 
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+    // 格式化耗时：超过 500ms 用秒显示
+    function fmtDur(ms) {
+      if (!ms) return '';
+      if (ms >= 500) return (ms / 1000).toFixed(2) + 's';
+      return ms + 'ms';
+    }
+
+    // cache 命中率百分比
+    function cacheHitRate(prompt, cached) {
+      if (!prompt || prompt === 0) return 0;
+      return (cached / prompt * 100);
+    }
 
     function toast(msg, ok=true) {
       const t = document.createElement('div');
@@ -363,11 +387,17 @@
       if (!items || items.length === 0) { list.innerHTML = '<div class="empty">暂无请求</div>'; return; }
       list.innerHTML = items.map(it => {
         const t = new Date(it.timestamp * 1000).toLocaleTimeString('zh-CN', {hour12: false});
+        const dur = it.duration_ms ? fmtDur(it.duration_ms) : '';
+        const tok = it.total_tokens ? `↑${it.prompt_tokens} ↓${it.completion_tokens}` : '';
+        const cache = it.cached_tokens > 0 ? `cache ${cacheHitRate(it.prompt_tokens, it.cached_tokens).toFixed(0)}%` : '';
         return `<div class="req-item ${it.id===currentId?'active':''}" data-id="${it.id}">
           <div class="row1"><span class="model">${esc(it.model)||'-'}</span><span class="time">${t}</span></div>
           <div class="meta">
             <span class="tag ${it.response_source}">${it.response_source}</span>
             <span class="tag">${it.messages_count}msg</span>
+            ${dur?`<span class="tag" style="background:#1a3a2a;color:#4ade80">${dur}</span>`:''}
+            ${tok?`<span class="tag" style="background:#3b2f1a;color:#fbbf24">${tok}</span>`:''}
+            ${cache?`<span class="tag" style="background:#3a1a2f;color:#f472b6">${cache}</span>`:''}
             <span class="tag">${it.hash}</span>
             ${it.error?'<span class="tag error">err</span>':''}
             ${it.proxy_status?`<span class="tag">${it.proxy_status}</span>`:''}
@@ -375,6 +405,26 @@
         </div>`;
       }).join('');
       list.querySelectorAll('.req-item').forEach(el => el.onclick = () => selectRecord(el.dataset.id));
+      renderStats(items);
+    }
+
+    // ============ Header 统计 ============
+    function renderStats(items) {
+      let inTok = 0, outTok = 0, cached = 0;
+      for (const it of (items || [])) {
+        inTok += it.prompt_tokens || 0;
+        outTok += it.completion_tokens || 0;
+        cached += it.cached_tokens || 0;
+      }
+      const rate = inTok > 0 ? (cached / inTok * 100).toFixed(1) : '0.0';
+      $('stats').innerHTML = inTok || outTok
+        ? `<span class="stat-item"><span class="stat-label">↑</span><span class="stat-val in">${inTok}</span></span>` +
+          `<span class="sep">|</span>` +
+          `<span class="stat-item"><span class="stat-label">↓</span><span class="stat-val out">${outTok}</span></span>` +
+          (cached > 0
+            ? `<span class="sep">|</span><span class="stat-item"><span class="stat-label">cache</span><span class="stat-val cache">${cached} (${rate}%)</span></span>`
+            : '')
+        : '';
     }
 
     // ============ Human rendering ============
@@ -432,8 +482,8 @@
 
     function renderMessage(m, i) {
       const role = m.role || '?';
-      let html = `<div class="msg-card role-${role}" onclick="toggleMsg(event)">
-        <div class="msg-header">
+      let html = `<div class="msg-card role-${role}">
+        <div class="msg-header" onclick="toggleMsg(event)">
           <span class="msg-caret">▾</span>
           ${dirArrow(role)}
           <span class="role-badge role-${role}">${esc(role)}</span>
@@ -450,8 +500,7 @@
     }
 
     function toggleMsg(e) {
-      if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
-      e.currentTarget.classList.toggle('collapsed');
+      e.currentTarget.parentElement.classList.toggle('collapsed');
     }
 
     function renderMessagesHuman(messages) {
@@ -538,17 +587,24 @@
       currentRecord = r;
       const d = $('detail');
       const time = new Date(r.timestamp * 1000).toLocaleString('zh-CN', {hour12: false});
+      const respTime = r.response_timestamp ? new Date(r.response_timestamp * 1000).toLocaleString('zh-CN', {hour12: false}) : '-';
       const parts = [];
 
       // Summary (collapsed by default)
       const model = r.body?.model;
-      const summaryText = `${esc(model||'-')} · ${r.response_source}${r.error?` · err`:''}`;
+      const dur = r.duration_ms ? fmtDur(r.duration_ms) : '-';
+      const cacheRate = r.prompt_tokens > 0 && r.cached_tokens > 0 ? cacheHitRate(r.prompt_tokens, r.cached_tokens).toFixed(1) + '%' : '-';
+      const summaryText = `${esc(model||'-')} · ${r.response_source}${r.error?` · err`:''} · ${dur}`;
       parts.push(block('请求概要',
         `<pre>${esc(JSON.stringify({
-          id: r.id, hash: r.hash, time, path: r.path, method: r.method,
-          model, source: r.response_source, error: r.error,
+          id: r.id, hash: r.hash, '请求时间': time, '响应时间': respTime, '耗时': dur,
+          '输入token': r.prompt_tokens || 0, '输出token': r.completion_tokens || 0, '总token': r.total_tokens || 0,
+          '缓存token': r.cached_tokens || 0, '缓存命中率': cacheRate,
+          path: r.path, method: r.method, model, source: r.response_source, error: r.error,
         }, null, 2))}</pre>`,
-        { id: r.id, hash: r.hash, timestamp: r.timestamp, path: r.path, method: r.method,
+        { id: r.id, hash: r.hash, timestamp: r.timestamp, response_timestamp: r.response_timestamp,
+          duration_ms: r.duration_ms, prompt_tokens: r.prompt_tokens, completion_tokens: r.completion_tokens,
+          total_tokens: r.total_tokens, cached_tokens: r.cached_tokens, path: r.path, method: r.method,
           model, response_source: r.response_source, error: r.error },
         { collapsed: true, summary: summaryText,
           extra: `<span class="hash">${esc(r.hash)}</span><span class="tag ${r.response_source}">${r.response_source}</span>
@@ -594,9 +650,11 @@
       if (r.response) {
         const respMsg = r.response.choices?.[0]?.message;
         const respSummary = respMsg?.content ? esc(String(respMsg.content).substring(0,40)) : (respMsg?.tool_calls ? 'tool_calls' : '-');
+        const tokExtra = r.total_tokens ? ` <span class="tag" style="background:#3b2f1a;color:#fbbf24">↑${r.prompt_tokens} ↓${r.completion_tokens}</span>` : '';
+        const cacheExtra = r.cached_tokens > 0 ? ` <span class="tag" style="background:#3a1a2f;color:#f472b6">cache ${cacheHitRate(r.prompt_tokens, r.cached_tokens).toFixed(0)}%</span>` : '';
         parts.push(block('返回给客户端的响应', renderResponseHuman(r.response), r.response,
           { summary: respSummary,
-            extra: `<button class="small" onclick="openCustomEditor('${r.hash}', true)">用此响应设置自定义</button>` }
+            extra: `${tokExtra}${cacheExtra}<button class="small" onclick="openCustomEditor('${r.hash}', true)">用此响应设置自定义</button>` }
         ));
       }
 

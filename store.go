@@ -30,18 +30,24 @@ type ServerConfig struct {
 
 // RequestRecord 请求记录
 type RequestRecord struct {
-	ID             string          `json:"id"`
-	Hash           string          `json:"hash"`
-	Timestamp      float64         `json:"timestamp"`
-	Path           string          `json:"path"`
-	Method         string          `json:"method"`
-	Body           json.RawMessage `json:"body"`
-	Response       json.RawMessage `json:"response"`
+	ID              string          `json:"id"`
+	Hash            string          `json:"hash"`
+	Timestamp       float64         `json:"timestamp"`        // 请求发送时间
+	ResponseTimestamp float64       `json:"response_timestamp,omitempty"` // 响应返回时间
+	DurationMs      int64           `json:"duration_ms,omitempty"` // 耗时（毫秒）
+	Path            string          `json:"path"`
+	Method          string          `json:"method"`
+	Body            json.RawMessage `json:"body"`
+	Response        json.RawMessage `json:"response"`
 	ResponseSource  string          `json:"response_source"` // mock | custom | proxy | error
-	ProxyRequest   json.RawMessage `json:"proxy_request,omitempty"`
-	ProxyResponse  json.RawMessage `json:"proxy_response,omitempty"`
-	ProxyStatus    int             `json:"proxy_status,omitempty"`
-	Error          string          `json:"error,omitempty"`
+	ProxyRequest    json.RawMessage `json:"proxy_request,omitempty"`
+	ProxyResponse   json.RawMessage `json:"proxy_response,omitempty"`
+	ProxyStatus     int             `json:"proxy_status,omitempty"`
+	Error           string          `json:"error,omitempty"`
+	PromptTokens    int             `json:"prompt_tokens,omitempty"`
+	CompletionTokens int            `json:"completion_tokens,omitempty"`
+	TotalTokens     int             `json:"total_tokens,omitempty"`
+	CachedTokens    int             `json:"cached_tokens,omitempty"`
 }
 
 // PersistState 持久化到 state.json 的内容
@@ -276,4 +282,33 @@ func NewRecord(method, path string, body map[string]any) RequestRecord {
 		Method:    method,
 		Body:      bodyBytes,
 	}
+}
+
+// ExtractUsage 从 OpenAI 响应中提取 usage token 数
+func ExtractUsage(respBytes json.RawMessage) (prompt, completion, total, cached int) {
+	if len(respBytes) == 0 {
+		return 0, 0, 0, 0
+	}
+	var resp struct {
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+			PromptTokensDetails struct {
+				CachedTokens int `json:"cached_tokens"`
+			} `json:"prompt_tokens_details"`
+		} `json:"usage"`
+	}
+	if json.Unmarshal(respBytes, &resp) != nil {
+		return 0, 0, 0, 0
+	}
+	return resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TotalTokens, resp.Usage.PromptTokensDetails.CachedTokens
+}
+
+// FinalizeRecord 记录响应时间和耗时，并提取 token usage
+func (r *RequestRecord) FinalizeRecord() {
+	now := float64(time.Now().UnixNano()) / 1e9
+	r.ResponseTimestamp = now
+	r.DurationMs = int64((now - r.Timestamp) * 1000)
+	r.PromptTokens, r.CompletionTokens, r.TotalTokens, r.CachedTokens = ExtractUsage(r.Response)
 }

@@ -143,6 +143,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if custom := store.GetCustom(record.Hash); custom != nil {
 		record.Response = custom
 		record.ResponseSource = "custom"
+		record.FinalizeRecord()
 		store.Add(record)
 		writeJSON(w, 200, custom)
 		return
@@ -159,6 +160,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				record.Response = errBytes
 				record.ResponseSource = "error"
 				record.Error = fmt.Sprintf("proxy failed: %v", err)
+				record.FinalizeRecord()
 				store.Add(record)
 				writeJSON(w, 502, errMsg)
 				return
@@ -170,6 +172,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			record.ProxyStatus = status
 			record.Response = upRespBytes
 			record.ResponseSource = "proxy"
+			record.FinalizeRecord()
 			store.Add(record)
 			writeJSON(w, status, upResp)
 			return
@@ -181,6 +184,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	mockBytes, _ := json.Marshal(mock)
 	record.Response = mockBytes
 	record.ResponseSource = "mock"
+	record.FinalizeRecord()
 	store.Add(record)
 	writeJSON(w, 200, mock)
 }
@@ -261,16 +265,22 @@ func handleListRequests(w http.ResponseWriter, r *http.Request) {
 		model, _ := body["model"].(string)
 		msgs, _ := body["messages"].([]any)
 		out = append(out, map[string]any{
-			"id":              rec.ID,
-			"hash":            rec.Hash,
-			"timestamp":       rec.Timestamp,
-			"path":            rec.Path,
-			"method":          rec.Method,
-			"model":           model,
-			"response_source": rec.ResponseSource,
-			"proxy_status":    rec.ProxyStatus,
-			"error":           rec.Error,
-			"messages_count":  len(msgs),
+			"id":                 rec.ID,
+			"hash":               rec.Hash,
+			"timestamp":          rec.Timestamp,
+			"response_timestamp": rec.ResponseTimestamp,
+			"duration_ms":        rec.DurationMs,
+			"path":               rec.Path,
+			"method":             rec.Method,
+			"model":              model,
+			"response_source":    rec.ResponseSource,
+			"proxy_status":       rec.ProxyStatus,
+			"error":              rec.Error,
+			"messages_count":     len(msgs),
+			"prompt_tokens":      rec.PromptTokens,
+			"completion_tokens":  rec.CompletionTokens,
+			"total_tokens":       rec.TotalTokens,
+			"cached_tokens":      rec.CachedTokens,
 		})
 	}
 	writeJSON(w, 200, out)
