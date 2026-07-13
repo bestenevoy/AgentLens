@@ -2,9 +2,16 @@
 openaimock.exe
 openaimock.exe~
 
-# State (contains API keys)
+# Database (contains API keys and request logs)
+openaimock.db
+openaimock.db-wal
+openaimock.db-shm
+
+# Old format backups (from migration)
 state.json
+state.json.bak
 logs.jsonl
+logs.jsonl.bak
 
 # Node
 web/node_modules/

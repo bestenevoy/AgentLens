@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { RequestRecord } from '../types';
+import type { RequestRecord, ChatCompletionBody, ChatCompletionResponse, ChatMessage, ToolDef, ToolCall, ContentPart } from '../types';
 import { fmtDur, cacheHitRate, fmtDateTime } from '../utils';
 
 interface Props {
@@ -8,13 +8,14 @@ interface Props {
 }
 
 export function Detail({ record, onEditCustom }: Props) {
+  const body: ChatCompletionBody = record.body || {};
   return (
     <section className="detail">
       <SummaryBlock record={record} onEditCustom={onEditCustom} />
-      <ParamsBlock body={record.body} />
-      {record.body?.tools && <ToolsBlock tools={record.body.tools} />}
-      <MessagesBlock messages={record.body?.messages || []} />
-      {record.proxy_request && <ProxyRequestBlock data={record.proxy_request} model={record.body?.model} />}
+      <ParamsBlock body={body} />
+      {body.tools && <ToolsBlock tools={body.tools} />}
+      <MessagesBlock messages={body.messages || []} />
+      {record.proxy_request && <ProxyRequestBlock data={record.proxy_request} model={body.model} />}
       {record.proxy_response && <ProxyResponseBlock resp={record.proxy_response} status={record.proxy_status} />}
       {record.response && (
         <ResponseBlock
@@ -32,7 +33,7 @@ export function Detail({ record, onEditCustom }: Props) {
 
 // ============ Block wrapper ============
 function Block({ title, children, json, collapsed = false, summary = '', extra }: {
-  title: string; children: React.ReactNode; json: any; collapsed?: boolean; summary?: string; extra?: React.ReactNode;
+  title: string; children: React.ReactNode; json: unknown; collapsed?: boolean; summary?: string; extra?: React.ReactNode;
 }) {
   const [isCollapsed, setIsCollapsed] = useState(collapsed);
   const [view, setView] = useState<'human' | 'json'>('human');
@@ -62,6 +63,19 @@ function SummaryBlock({ record, onEditCustom }: { record: RequestRecord; onEditC
   const cacheRate = record.prompt_tokens && record.cached_tokens
     ? cacheHitRate(record.prompt_tokens, record.cached_tokens).toFixed(1) + '%' : '-';
 
+  const summaryData = {
+    id: record.id, hash: record.hash,
+    '请求时间': fmtDateTime(record.timestamp),
+    '响应时间': record.response_timestamp ? fmtDateTime(record.response_timestamp) : '-',
+    '耗时': dur,
+    '输入token': record.prompt_tokens || 0,
+    '输出token': record.completion_tokens || 0,
+    '总token': record.total_tokens || 0,
+    '缓存token': record.cached_tokens || 0,
+    '缓存命中率': cacheRate,
+    path: record.path, method: record.method, model, source: record.response_source, error: record.error,
+  };
+
   return (
     <Block
       title="请求概要"
@@ -74,37 +88,15 @@ function SummaryBlock({ record, onEditCustom }: { record: RequestRecord; onEditC
           <button className="small" onClick={() => onEditCustom(record.hash)}>编辑自定义响应</button>
         </>
       }
-      json={{
-        id: record.id, hash: record.hash,
-        '请求时间': fmtDateTime(record.timestamp),
-        '响应时间': record.response_timestamp ? fmtDateTime(record.response_timestamp) : '-',
-        '耗时': dur,
-        '输入token': record.prompt_tokens || 0,
-        '输出token': record.completion_tokens || 0,
-        '总token': record.total_tokens || 0,
-        '缓存token': record.cached_tokens || 0,
-        '缓存命中率': cacheRate,
-        path: record.path, method: record.method, model, source: record.response_source, error: record.error,
-      }}
+      json={summaryData}
     >
-      <pre>{JSON.stringify({
-        id: record.id, hash: record.hash,
-        '请求时间': fmtDateTime(record.timestamp),
-        '响应时间': record.response_timestamp ? fmtDateTime(record.response_timestamp) : '-',
-        '耗时': dur,
-        '输入token': record.prompt_tokens || 0,
-        '输出token': record.completion_tokens || 0,
-        '总token': record.total_tokens || 0,
-        '缓存token': record.cached_tokens || 0,
-        '缓存命中率': cacheRate,
-        path: record.path, method: record.method, model, source: record.response_source, error: record.error,
-      }, null, 2)}</pre>
+      <pre>{JSON.stringify(summaryData, null, 2)}</pre>
     </Block>
   );
 }
 
 // ============ Params ============
-function ParamsBlock({ body }: { body: any }) {
+function ParamsBlock({ body }: { body: ChatCompletionBody }) {
   const params = { ...body };
   delete params.messages;
   delete params.tools;
@@ -117,16 +109,16 @@ function ParamsBlock({ body }: { body: any }) {
 }
 
 // ============ Tools ============
-function ToolsBlock({ tools }: { tools: any[] }) {
+function ToolsBlock({ tools }: { tools: ToolDef[] }) {
   const names = tools.map(t => t.function?.name || '?').join(', ');
   return (
     <Block title={`Tools (${tools.length})`} collapsed summary={names} json={tools}>
-      {tools.map((tool, i) => <ToolDef key={i} tool={tool} />)}
+      {tools.map((tool, i) => <ToolDefCard key={i} tool={tool} />)}
     </Block>
   );
 }
 
-function ToolDef({ tool }: { tool: any }) {
+function ToolDefCard({ tool }: { tool: ToolDef }) {
   const fn = tool.function || {};
   const params = fn.parameters?.properties || {};
   const required = new Set(fn.parameters?.required || []);
@@ -137,12 +129,12 @@ function ToolDef({ tool }: { tool: any }) {
       {Object.keys(params).length > 0 && (
         <div>
           <div style={{ color: 'var(--text-mute)', fontSize: 11, marginBottom: 2 }}>Parameters:</div>
-          {Object.entries(params).map(([name, schema]: [string, any]) => (
+          {Object.entries(params).map(([name, schema]) => (
             <div key={name} className="param-row">
               <span className="param-name">{name}</span>
-              <span className="param-type">{schema.type || 'any'}</span>
+              <span className="param-type">{(schema as Record<string, unknown>).type as string || 'any'}</span>
               {required.has(name) && <span className="param-req">必填</span>}
-              <span className="param-desc">{schema.description || ''}</span>
+              <span className="param-desc">{(schema as Record<string, unknown>).description as string || ''}</span>
             </div>
           ))}
         </div>
@@ -152,7 +144,7 @@ function ToolDef({ tool }: { tool: any }) {
 }
 
 // ============ Messages ============
-function MessagesBlock({ messages }: { messages: any[] }) {
+function MessagesBlock({ messages }: { messages: ChatMessage[] }) {
   const legend = <span style={{ fontSize: 10, color: 'var(--text-mute)', textTransform: 'none' }}>↑ 发给 LLM · ↓ LLM 返回 · 点击 header 折叠</span>;
   return (
     <Block title={`Messages (${messages.length}) ${legend}`} json={messages}>
@@ -161,7 +153,7 @@ function MessagesBlock({ messages }: { messages: any[] }) {
   );
 }
 
-function MessageCard({ msg, index }: { msg: any; index: number }) {
+function MessageCard({ msg, index }: { msg: ChatMessage; index: number }) {
   const [collapsed, setCollapsed] = useState(false);
   const role = msg.role || '?';
   const summary = msgSummary(msg);
@@ -177,7 +169,7 @@ function MessageCard({ msg, index }: { msg: any; index: number }) {
       </div>
       <div className="msg-body">
         {msg.content != null && <Content content={msg.content} />}
-        {msg.tool_calls?.map((tc: any, i: number) => <ToolCall key={i} tc={tc} />)}
+        {msg.tool_calls?.map((tc: ToolCall, i: number) => <ToolCallCard key={i} tc={tc} />)}
         {msg.tool_call_id && <div className="tool-result-meta">tool_call_id: <code>{msg.tool_call_id}</code></div>}
         {msg.name && <div className="tool-result-meta">name: <code>{msg.name}</code></div>}
       </div>
@@ -190,17 +182,17 @@ function DirArrow({ role }: { role: string }) {
   return <span className="dir-arrow up" title="发给 LLM">↑</span>;
 }
 
-function msgSummary(m: any): string {
+function msgSummary(m: ChatMessage): string {
   if (m.content != null) {
     let txt = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
     if (txt.length > 60) txt = txt.substring(0, 60) + '...';
     return txt;
   }
-  if (m.tool_calls) return 'tool_calls: ' + m.tool_calls.map((tc: any) => tc.function?.name).join(', ');
+  if (m.tool_calls) return 'tool_calls: ' + m.tool_calls.map((tc: ToolCall) => tc.function?.name).join(', ');
   return '(空)';
 }
 
-function Content({ content }: { content: any }) {
+function Content({ content }: { content: string | ContentPart[] }) {
   if (content == null) return null;
   if (typeof content === 'string') return <div className="msg-content">{content}</div>;
   if (Array.isArray(content)) {
@@ -213,7 +205,7 @@ function Content({ content }: { content: any }) {
   return <pre>{JSON.stringify(content, null, 2)}</pre>;
 }
 
-function ToolCall({ tc }: { tc: any }) {
+function ToolCallCard({ tc }: { tc: ToolCall }) {
   const fn = tc.function || {};
   let argsHtml: React.ReactNode;
   try {
@@ -240,7 +232,7 @@ function ToolCall({ tc }: { tc: any }) {
 }
 
 // ============ Proxy ============
-function ProxyRequestBlock({ data, model }: { data: any; model: string }) {
+function ProxyRequestBlock({ data, model }: { data: ChatCompletionBody; model?: string }) {
   return (
     <Block title="转发到上游的请求" collapsed summary={`model: ${data.model || model || '-'}`} json={data}>
       <pre>{JSON.stringify(data, null, 2)}</pre>
@@ -248,7 +240,7 @@ function ProxyRequestBlock({ data, model }: { data: any; model: string }) {
   );
 }
 
-function ProxyResponseBlock({ resp, status }: { resp: any; status?: number }) {
+function ProxyResponseBlock({ resp, status }: { resp: ChatCompletionResponse; status?: number }) {
   return (
     <Block title={`上游响应 (status=${status || '-'})`} json={resp}>
       <ResponseHuman resp={resp} />
@@ -258,7 +250,7 @@ function ProxyResponseBlock({ resp, status }: { resp: any; status?: number }) {
 
 // ============ Response ============
 function ResponseBlock({ resp, promptTokens, completionTokens, cachedTokens, hash, onEditCustom }: {
-  resp: any; promptTokens?: number; completionTokens?: number; cachedTokens?: number; hash: string;
+  resp: ChatCompletionResponse; promptTokens?: number; completionTokens?: number; cachedTokens?: number; hash: string;
   onEditCustom: (h: string, fill?: boolean) => void;
 }) {
   const respMsg = resp.choices?.[0]?.message;
@@ -279,12 +271,12 @@ function ResponseBlock({ resp, promptTokens, completionTokens, cachedTokens, has
   );
 }
 
-function ResponseHuman({ resp }: { resp: any }) {
+function ResponseHuman({ resp }: { resp: ChatCompletionResponse }) {
   if (!resp) return <span style={{ color: 'var(--text-mute)' }}>(无响应)</span>;
   if (resp.error) return <div className="error-box">⚠️ {resp.error.message || JSON.stringify(resp.error)}</div>;
   const choice = resp.choices?.[0];
   if (!choice) return <div style={{ color: 'var(--text-mute)' }}>无 choices</div>;
-  const msg = choice.message || {};
+  const msg: ChatMessage = choice.message || { role: '' };
   return (
     <div className="response-card">
       <div className="msg-header">
@@ -292,8 +284,8 @@ function ResponseHuman({ resp }: { resp: any }) {
         <span className="role-badge role-assistant">assistant</span>
         <span className="finish-reason">finish: {choice.finish_reason || ''}</span>
       </div>
-      {msg.content && <Content content={msg.content} />}
-      {msg.tool_calls?.map((tc: any, i: number) => <ToolCall key={i} tc={tc} />)}
+      {msg.content != null && <Content content={msg.content} />}
+      {msg.tool_calls?.map((tc: ToolCall, i: number) => <ToolCallCard key={i} tc={tc} />)}
       {resp.usage && (
         <div className="usage">
           tokens: prompt={resp.usage.prompt_tokens || 0} completion={resp.usage.completion_tokens || 0} total={resp.usage.total_tokens || 0}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { listCustom, setCustom, deleteCustom } from '../api';
-import type { RequestRecord } from '../types';
+import type { RequestRecord, ChatCompletionResponse } from '../types';
 
 interface Props {
   hash: string;
@@ -13,8 +13,10 @@ export function CustomEditor({ hash, currentRecord, onClose, toast }: Props) {
   const [text, setText] = useState('');
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       const map = await listCustom();
+      if (cancelled) return;
       const existing = map[hash];
       if (existing) {
         setText(JSON.stringify(existing, null, 2));
@@ -29,23 +31,28 @@ export function CustomEditor({ hash, currentRecord, onClose, toast }: Props) {
         }, null, 2));
       }
     })();
-  }, [hash]);
+    return () => { cancelled = true; };
+  }, [hash, currentRecord]);
 
   async function save() {
     try {
-      const parsed = JSON.parse(text);
+      const parsed: ChatCompletionResponse = JSON.parse(text);
       await setCustom(hash, parsed);
       toast('已保存自定义响应');
       onClose();
-    } catch (e: any) {
-      toast('JSON 解析失败: ' + e.message, false);
+    } catch (e) {
+      toast('JSON 解析失败: ' + (e instanceof Error ? e.message : String(e)), false);
     }
   }
 
   async function del() {
-    await deleteCustom(hash);
-    toast('已删除');
-    onClose();
+    try {
+      await deleteCustom(hash);
+      toast('已删除');
+      onClose();
+    } catch (e) {
+      toast('删除失败: ' + (e instanceof Error ? e.message : String(e)), false);
+    }
   }
 
   function fillFromResponse() {

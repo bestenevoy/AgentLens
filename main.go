@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"time"
 )
 
 //go:embed all:web/dist
@@ -14,6 +18,7 @@ var webFS embed.FS
 
 func main() {
 	store.Load()
+	defer store.Close()
 
 	mux := http.NewServeMux()
 
@@ -29,20 +34,20 @@ func main() {
 		case http.MethodPut:
 			handlePutConfig(w, r)
 		default:
-			http.Error(w, "method not allowed", 405)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
 	mux.HandleFunc("/admin/api/providers", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			handleCreateProvider(w, r)
 		} else {
-			http.Error(w, "method not allowed", 405)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
 	mux.HandleFunc("/admin/api/providers/", func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/admin/api/providers/")
 		if id == "" {
-			http.Error(w, "not found", 404)
+			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		switch r.Method {
@@ -51,7 +56,7 @@ func main() {
 		case http.MethodDelete:
 			handleDeleteProvider(w, r, id)
 		default:
-			http.Error(w, "method not allowed", 405)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
 	mux.HandleFunc("/admin/api/requests", func(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +69,7 @@ func main() {
 	mux.HandleFunc("/admin/api/requests/", func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/admin/api/requests/")
 		if id == "" {
-			http.Error(w, "not found", 404)
+			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		handleGetRequest(w, r, id)
@@ -75,7 +80,7 @@ func main() {
 	mux.HandleFunc("/admin/api/custom-responses/", func(w http.ResponseWriter, r *http.Request) {
 		hash := strings.TrimPrefix(r.URL.Path, "/admin/api/custom-responses/")
 		if hash == "" {
-			http.Error(w, "not found", 404)
+			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		switch r.Method {
@@ -84,7 +89,7 @@ func main() {
 		case http.MethodDelete:
 			handleDeleteCustom(w, r, hash)
 		default:
-			http.Error(w, "method not allowed", 405)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
 
@@ -117,12 +122,42 @@ func main() {
 		fileServer.ServeHTTP(w, r2)
 	})
 	mux.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/admin/", 302)
+		http.Redirect(w, r, "/admin/", http.StatusFound)
 	})
 
-	addr := ":12010"
-	fmt.Printf("OpenAI Mock Inspector running on http://localhost%s\n", addr)
-	fmt.Printf("  OpenAI API: http://localhost%s/v1\n", addr)
-	fmt.Printf("  Admin UI:   http://localhost%s/admin/\n", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	// 端口可配置（环境变量 PORT）
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "12010"
+	}
+	addr := ":" + port
+
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	// 启动服务器
+	go func() {
+		fmt.Printf("OpenAI Mock Inspector running on http://localhost%s\n", addr)
+		fmt.Printf("  OpenAI API: http://localhost%s/v1\n", addr)
+		fmt.Printf("  Admin UI:   http://localhost%s/admin/\n", addr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	// 优雅关闭
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+	<-quit
+
+	fmt.Println("\nShutting down...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("Server shutdown error: %v", err)
+	}
+	fmt.Println("Server stopped")
 }
