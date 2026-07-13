@@ -215,8 +215,7 @@ chore:    其他
 
 | Workflow | 职责 | 触发条件 |
 |----------|------|---------|
-| `release-please.yml` | 分析 commits，更新 CHANGELOG.md，创建 Release PR，合并后创建 tag | push 到 main |
-| `build.yml` | 构建多平台二进制（Windows/Linux/macOS），上传到 Release | tag push |
+| `release-please.yml` | 分析 commits，更新 CHANGELOG.md，创建 Release PR；合并后创建 tag + Release，自动构建多平台二进制上传 | push 到 main |
 
 构建平台：
 

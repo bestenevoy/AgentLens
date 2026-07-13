@@ -35,8 +35,7 @@ OpenAI Mock Inspector：Go 后端 + React 前端，编译为单文件可执行�
 │   ├── vite.config.ts   # base: '/admin/' + dev proxy
 │   └── package.json
 ├── .github/workflows/
-│   ├── release-please.yml  # 自动 changelog + tag
-│   └── build.yml           # 多平台构建
+│   └── release-please.yml  # 自动 changelog + tag + 构建 + 上传 Release
 └── go.mod
 ```
 
