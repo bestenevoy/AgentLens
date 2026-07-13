@@ -386,8 +386,19 @@ func handleProxyRequest(w http.ResponseWriter, r *http.Request, body map[string]
 			}
 		}
 
-		record.Response = buf.Bytes()
-		record.ProxyResponse = buf.Bytes()
+		// 从 SSE 流中重建完整响应（合法 JSON），用于存储和前端展示
+		reconstructed := reconstructStreamResponse(buf.Bytes())
+		reconstructedBytes, _ := json.Marshal(reconstructed)
+
+		// proxy_response 保留原始 SSE 数据（包装为合法 JSON 对象）
+		proxyRespWrapped, _ := json.Marshal(map[string]any{
+			"stream_raw":   buf.String(),
+			"reconstructed": reconstructed,
+			"note":         "Streaming response; reconstructed for display",
+		})
+
+		record.Response = reconstructedBytes
+		record.ProxyResponse = proxyRespWrapped
 		record.ResponseSource = "proxy"
 		// 从 SSE 流中提取 usage
 		p, c, t, ca := extractStreamUsage(buf.Bytes())

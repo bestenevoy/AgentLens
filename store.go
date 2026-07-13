@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -338,13 +339,13 @@ func (s *Store) Get(id string) (*RequestRecord, error) {
 	r.DurationMs = durMs.Int64
 	r.ProxyStatus = int(proxyStatus.Int64)
 	r.Error = errMsg.String
-	r.Body = json.RawMessage(body.String)
-	r.Response = json.RawMessage(response.String)
+	r.Body = safeRawMessage(body.String)
+	r.Response = safeRawMessage(response.String)
 	if proxyReq.Valid {
-		r.ProxyRequest = json.RawMessage(proxyReq.String)
+		r.ProxyRequest = safeRawMessage(proxyReq.String)
 	}
 	if proxyResp.Valid {
-		r.ProxyResponse = json.RawMessage(proxyResp.String)
+		r.ProxyResponse = safeRawMessage(proxyResp.String)
 	}
 	return &r, nil
 }
@@ -629,5 +630,162 @@ func extractStreamUsage(sseData []byte) (prompt, completion, total, cached int) 
 		}
 	}
 	return
+}
+
+// reconstructStreamResponse 从 SSE 流式数据重建一个完整的 chat completion 响应对象
+// 将所有 delta chunks 合并为一个包含完整 message 的响应
+func reconstructStreamResponse(sseData []byte) map[string]any {
+	var respID, model, finishReason string
+	var created int64
+	var content strings.Builder
+	var usage map[string]any
+
+	// tool_calls 按 index 累积
+	type toolCallAccum struct {
+		ID       string
+		Type     string
+		FuncName string
+		Args     strings.Builder
+	}
+	toolCalls := map[int]*toolCallAccum{}
+	maxToolIdx := -1
+
+	scanner := bufio.NewScanner(bytes.NewReader(sseData))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if len(line) < 6 || line[:6] != "data: " {
+			continue
+		}
+		data := line[6:]
+		if data == "[DONE]" {
+			continue
+		}
+		var chunk map[string]any
+		if json.Unmarshal([]byte(data), &chunk) != nil {
+			continue
+		}
+		if respID == "" {
+			respID, _ = chunk["id"].(string)
+		}
+		if model == "" {
+			model, _ = chunk["model"].(string)
+		}
+		if created == 0 {
+			if c, ok := chunk["created"].(float64); ok {
+				created = int64(c)
+			}
+		}
+		if u, ok := chunk["usage"].(map[string]any); ok && u != nil {
+			usage = u
+		}
+		choices, _ := chunk["choices"].([]any)
+		for _, ch := range choices {
+			choice, ok := ch.(map[string]any)
+			if !ok {
+				continue
+			}
+			if fr, ok := choice["finish_reason"].(string); ok && fr != "" {
+				finishReason = fr
+			}
+			delta, _ := choice["delta"].(map[string]any)
+			if delta == nil {
+				continue
+			}
+			if c, ok := delta["content"].(string); ok {
+				content.WriteString(c)
+			}
+			if tcs, ok := delta["tool_calls"].([]any); ok {
+				for _, tc := range tcs {
+					tcMap, ok := tc.(map[string]any)
+					if !ok {
+						continue
+					}
+					idxF, _ := tcMap["index"].(float64)
+					idx := int(idxF)
+					accum, exists := toolCalls[idx]
+					if !exists {
+						accum = &toolCallAccum{}
+						toolCalls[idx] = accum
+						if idx > maxToolIdx {
+							maxToolIdx = idx
+						}
+					}
+					if id, ok := tcMap["id"].(string); ok && id != "" {
+						accum.ID = id
+					}
+					if t, ok := tcMap["type"].(string); ok && t != "" {
+						accum.Type = t
+					}
+					if fn, ok := tcMap["function"].(map[string]any); ok {
+						if name, ok := fn["name"].(string); ok && name != "" {
+							accum.FuncName = name
+						}
+						if args, ok := fn["arguments"].(string); ok {
+							accum.Args.WriteString(args)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 构建完整 message
+	message := map[string]any{"role": "assistant"}
+	if content.Len() > 0 {
+		message["content"] = content.String()
+	}
+	if len(toolCalls) > 0 {
+		tcList := make([]map[string]any, 0, len(toolCalls))
+		for i := 0; i <= maxToolIdx; i++ {
+			accum, ok := toolCalls[i]
+			if !ok {
+				continue
+			}
+			tcList = append(tcList, map[string]any{
+				"id":   accum.ID,
+				"type": accum.Type,
+				"function": map[string]any{
+					"name":      accum.FuncName,
+					"arguments": accum.Args.String(),
+				},
+			})
+		}
+		message["tool_calls"] = tcList
+	}
+
+	resp := map[string]any{
+		"id":      respID,
+		"object":  "chat.completion",
+		"created": created,
+		"model":   model,
+		"choices": []map[string]any{
+			{
+				"index":         0,
+				"message":       message,
+				"finish_reason": finishReason,
+			},
+		},
+	}
+	if usage != nil {
+		resp["usage"] = usage
+	}
+	return resp
+}
+
+// safeRawMessage 确保返回的 json.RawMessage 是合法 JSON
+// 如果输入不是合法 JSON（例如遗留的 SSE 原始文本），则包装为 JSON 字符串对象
+func safeRawMessage(data string) json.RawMessage {
+	if data == "" {
+		return nil
+	}
+	if json.Valid([]byte(data)) {
+		return json.RawMessage(data)
+	}
+	// 非法 JSON（如原始 SSE 文本），包装为对象
+	wrapped, _ := json.Marshal(map[string]any{
+		"stream_raw": data,
+		"note":       "This was a streaming response; raw SSE data preserved",
+	})
+	return wrapped
 }
 
