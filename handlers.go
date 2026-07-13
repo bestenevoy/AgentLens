@@ -210,12 +210,18 @@ func handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Mode               string  `json:"mode"`
 		SelectedProviderID *string `json:"selected_provider_id"`
+		MaxRecords         int     `json:"max_records"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	store.UpdateSettings(req.Mode, req.SelectedProviderID)
+	// MaxRecords <= 0 时不修改
+	maxRec := req.MaxRecords
+	if maxRec <= 0 {
+		maxRec = -1
+	}
+	store.UpdateSettings(req.Mode, req.SelectedProviderID, maxRec)
 	writeJSON(w, 200, store.GetConfig())
 }
 

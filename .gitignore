@@ -4,6 +4,11 @@ openaimock.exe~
 
 # State (contains API keys)
 state.json
+logs.jsonl
+
+# Node
+web/node_modules/
+web/dist/
 
 # Go workspace
 *.tmp

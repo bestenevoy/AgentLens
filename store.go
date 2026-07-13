@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -13,11 +14,11 @@ import (
 
 // Provider 一个中转目标（OpenAI 兼容端点）
 type Provider struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	BaseURL        string `json:"base_url"`
-	APIKey         string `json:"api_key"`
-	OverrideModel  string `json:"override_model"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	BaseURL         string `json:"base_url"`
+	APIKey          string `json:"api_key"`
+	OverrideModel   string `json:"override_model"`
 	PassthroughAuth bool   `json:"passthrough_auth"`
 }
 
@@ -26,38 +27,39 @@ type ServerConfig struct {
 	Mode               string     `json:"mode"` // mock | proxy
 	SelectedProviderID *string    `json:"selected_provider_id"`
 	Providers          []Provider `json:"providers"`
+	MaxRecords         int        `json:"max_records"` // 日志保留条数
 }
 
 // RequestRecord 请求记录
 type RequestRecord struct {
-	ID              string          `json:"id"`
-	Hash            string          `json:"hash"`
-	Timestamp       float64         `json:"timestamp"`        // 请求发送时间
-	ResponseTimestamp float64       `json:"response_timestamp,omitempty"` // 响应返回时间
-	DurationMs      int64           `json:"duration_ms,omitempty"` // 耗时（毫秒）
-	Path            string          `json:"path"`
-	Method          string          `json:"method"`
-	Body            json.RawMessage `json:"body"`
-	Response        json.RawMessage `json:"response"`
-	ResponseSource  string          `json:"response_source"` // mock | custom | proxy | error
-	ProxyRequest    json.RawMessage `json:"proxy_request,omitempty"`
-	ProxyResponse   json.RawMessage `json:"proxy_response,omitempty"`
-	ProxyStatus     int             `json:"proxy_status,omitempty"`
-	Error           string          `json:"error,omitempty"`
-	PromptTokens    int             `json:"prompt_tokens,omitempty"`
-	CompletionTokens int            `json:"completion_tokens,omitempty"`
-	TotalTokens     int             `json:"total_tokens,omitempty"`
-	CachedTokens    int             `json:"cached_tokens,omitempty"`
+	ID                string          `json:"id"`
+	Hash              string          `json:"hash"`
+	Timestamp         float64         `json:"timestamp"`
+	ResponseTimestamp float64         `json:"response_timestamp,omitempty"`
+	DurationMs        int64           `json:"duration_ms,omitempty"`
+	Path              string          `json:"path"`
+	Method            string          `json:"method"`
+	Body              json.RawMessage `json:"body"`
+	Response          json.RawMessage `json:"response"`
+	ResponseSource    string          `json:"response_source"`
+	ProxyRequest      json.RawMessage `json:"proxy_request,omitempty"`
+	ProxyResponse     json.RawMessage `json:"proxy_response,omitempty"`
+	ProxyStatus       int             `json:"proxy_status,omitempty"`
+	Error             string          `json:"error,omitempty"`
+	PromptTokens      int             `json:"prompt_tokens,omitempty"`
+	CompletionTokens  int             `json:"completion_tokens,omitempty"`
+	TotalTokens       int             `json:"total_tokens,omitempty"`
+	CachedTokens      int             `json:"cached_tokens,omitempty"`
 }
 
-// PersistState 持久化到 state.json 的内容
+// PersistState 持久化到 state.json
 type PersistState struct {
-	Config          ServerConfig           `json:"config"`
+	Config          ServerConfig               `json:"config"`
 	CustomResponses map[string]json.RawMessage `json:"custom_responses"`
 }
 
 const stateFile = "state.json"
-const maxRecords = 200
+const logsFile = "logs.jsonl"
 
 // Store 全局存储
 type Store struct {
@@ -69,11 +71,16 @@ type Store struct {
 
 var store = &Store{
 	customResponses: make(map[string]json.RawMessage),
-	config: ServerConfig{Mode: "mock"},
+	config:          ServerConfig{Mode: "mock", MaxRecords: 50},
 }
 
-// Load 从 state.json 加载
+// Load 加载配置和日志
 func (s *Store) Load() {
+	s.loadState()
+	s.loadLogs()
+}
+
+func (s *Store) loadState() {
 	data, err := os.ReadFile(stateFile)
 	if err != nil {
 		return
@@ -88,25 +95,108 @@ func (s *Store) Load() {
 	if s.config.Mode == "" {
 		s.config.Mode = "mock"
 	}
+	if s.config.MaxRecords <= 0 {
+		s.config.MaxRecords = 50
+	}
 	s.customResponses = ps.CustomResponses
 	if s.customResponses == nil {
 		s.customResponses = make(map[string]json.RawMessage)
 	}
 }
 
-func (s *Store) save() {
+// loadLogs 从 logs.jsonl 加载历史日志（只加载最后 MaxRecords 条）
+func (s *Store) loadLogs() {
+	f, err := os.Open(logsFile)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	var all []RequestRecord
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 最大 10MB 单行
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var r RequestRecord
+		if json.Unmarshal(line, &r) == nil {
+			all = append(all, r)
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	max := s.config.MaxRecords
+	if max <= 0 {
+		max = 50
+	}
+	if len(all) > max {
+		all = all[len(all)-max:]
+	}
+	s.records = all
+}
+
+func (s *Store) saveState() {
 	ps := PersistState{Config: s.config, CustomResponses: s.customResponses}
 	data, _ := json.MarshalIndent(ps, "", "  ")
 	_ = os.WriteFile(stateFile, data, 0644)
 }
 
-// Add 添加请求记录
+// appendLog 追加一条日志到 logs.jsonl
+func (s *Store) appendLog(r RequestRecord) {
+	data, err := json.Marshal(r)
+	if err != nil {
+		return
+	}
+	f, err := os.OpenFile(logsFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	f.Write(data)
+	f.Write([]byte("\n"))
+}
+
+// rewriteLogs 重写整个 logs.jsonl（用于清空或裁剪）
+func (s *Store) rewriteLogs() {
+	s.mu.Lock()
+	records := make([]RequestRecord, len(s.records))
+	copy(records, s.records)
+	s.mu.Unlock()
+
+	f, err := os.Create(logsFile)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	for _, r := range records {
+		data, _ := json.Marshal(r)
+		f.Write(data)
+		f.Write([]byte("\n"))
+	}
+}
+
+// Add 添加请求记录（同时持久化到日志文件）
 func (s *Store) Add(r RequestRecord) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	max := s.config.MaxRecords
+	if max <= 0 {
+		max = 50
+	}
 	s.records = append(s.records, r)
-	if len(s.records) > maxRecords {
-		s.records = s.records[len(s.records)-maxRecords:]
+	// 裁剪
+	trimmed := false
+	if len(s.records) > max {
+		s.records = s.records[len(s.records)-max:]
+		trimmed = true
+	}
+	s.mu.Unlock()
+
+	s.appendLog(r)
+	if trimmed {
+		s.rewriteLogs()
 	}
 }
 
@@ -123,7 +213,6 @@ func (s *Store) ListRecent(limit int) []RequestRecord {
 	}
 	out := make([]RequestRecord, limit)
 	copy(out, s.records[n-limit:])
-	// 反转
 	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
 		out[i], out[j] = out[j], out[i]
 	}
@@ -143,11 +232,12 @@ func (s *Store) Get(id string) *RequestRecord {
 	return nil
 }
 
-// Clear 清空请求记录
+// Clear 清空请求记录和日志文件
 func (s *Store) Clear() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.records = nil
+	s.mu.Unlock()
+	os.Remove(logsFile)
 }
 
 // ---- Custom responses ----
@@ -156,7 +246,7 @@ func (s *Store) SetCustom(hash string, resp json.RawMessage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.customResponses[hash] = resp
-	s.save()
+	s.saveState()
 }
 
 func (s *Store) GetCustom(hash string) json.RawMessage {
@@ -172,7 +262,7 @@ func (s *Store) DeleteCustom(hash string) bool {
 		return false
 	}
 	delete(s.customResponses, hash)
-	s.save()
+	s.saveState()
 	return true
 }
 
@@ -194,19 +284,32 @@ func (s *Store) GetConfig() ServerConfig {
 	return s.config
 }
 
-func (s *Store) UpdateSettings(mode string, selectedID *string) {
+// UpdateSettings 更新模式、选中 provider、最大记录数
+func (s *Store) UpdateSettings(mode string, selectedID *string, maxRecords int) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.config.Mode = mode
 	s.config.SelectedProviderID = selectedID
-	s.save()
+	if maxRecords > 0 {
+		s.config.MaxRecords = maxRecords
+	}
+	s.saveState()
+	// 如果 maxRecords 变小了，裁剪现有记录
+	if maxRecords > 0 && len(s.records) > maxRecords {
+		s.records = s.records[len(s.records)-maxRecords:]
+	}
+	s.mu.Unlock()
+
+	// 裁剪后重写日志文件（在锁外执行 IO）
+	if maxRecords > 0 {
+		s.rewriteLogs()
+	}
 }
 
 func (s *Store) AddProvider(p Provider) Provider {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.config.Providers = append(s.config.Providers, p)
-	s.save()
+	s.saveState()
 	return p
 }
 
@@ -217,7 +320,7 @@ func (s *Store) UpdateProvider(id string, p Provider) *Provider {
 		if s.config.Providers[i].ID == id {
 			p.ID = id
 			s.config.Providers[i] = p
-			s.save()
+			s.saveState()
 			return &p
 		}
 	}
@@ -237,7 +340,7 @@ func (s *Store) DeleteProvider(id string) {
 	if s.config.SelectedProviderID != nil && *s.config.SelectedProviderID == id {
 		s.config.SelectedProviderID = nil
 	}
-	s.save()
+	s.saveState()
 }
 
 func (s *Store) GetProvider() *Provider {
@@ -256,7 +359,6 @@ func (s *Store) GetProvider() *Provider {
 
 // ---- Helpers ----
 
-// HashBody 对请求 body 做稳定哈希（只看 messages/tools/tool_choice）
 func HashBody(body map[string]any) string {
 	sig := map[string]any{}
 	for _, k := range []string{"messages", "tools", "tool_choice"} {
@@ -264,13 +366,11 @@ func HashBody(body map[string]any) string {
 			sig[k] = v
 		}
 	}
-	// 不用 sort_keys，手动排序保证稳定
 	data, _ := json.Marshal(sig)
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])[:16]
 }
 
-// NewRecord 创建请求记录
 func NewRecord(method, path string, body map[string]any) RequestRecord {
 	bodyBytes, _ := json.Marshal(body)
 	hash := HashBody(body)
@@ -284,7 +384,6 @@ func NewRecord(method, path string, body map[string]any) RequestRecord {
 	}
 }
 
-// ExtractUsage 从 OpenAI 响应中提取 usage token 数
 func ExtractUsage(respBytes json.RawMessage) (prompt, completion, total, cached int) {
 	if len(respBytes) == 0 {
 		return 0, 0, 0, 0
@@ -305,7 +404,6 @@ func ExtractUsage(respBytes json.RawMessage) (prompt, completion, total, cached 
 	return resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TotalTokens, resp.Usage.PromptTokensDetails.CachedTokens
 }
 
-// FinalizeRecord 记录响应时间和耗时，并提取 token usage
 func (r *RequestRecord) FinalizeRecord() {
 	now := float64(time.Now().UnixNano()) / 1e9
 	r.ResponseTimestamp = now

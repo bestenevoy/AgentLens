@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-//go:embed static
-var staticFiles embed.FS
+//go:embed all:web/dist
+var webFS embed.FS
 
 func main() {
 	store.Load()
@@ -88,20 +88,33 @@ func main() {
 		}
 	})
 
-	// 静态 UI
-	staticFS, err := fs.Sub(staticFiles, "static")
+	// 静态 UI (React 构建产物) + SPA fallback
+	distFS, err := fs.Sub(webFS, "web/dist")
 	if err != nil {
 		log.Fatal(err)
 	}
-	mux.Handle("/admin/static/", http.StripPrefix("/admin/static/", http.FileServer(http.FS(staticFS))))
+	fileServer := http.StripPrefix("/admin/", http.FileServer(http.FS(distFS)))
 	mux.HandleFunc("/admin/", func(w http.ResponseWriter, r *http.Request) {
-		data, err := fs.ReadFile(staticFS, "index.html")
-		if err != nil {
-			http.Error(w, err.Error(), 500)
+		// /admin/api/* 走 API 路由（已注册），这里只处理静态资源
+		if strings.HasPrefix(r.URL.Path, "/admin/api/") {
+			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(data)
+		// 尝试静态文件
+		path := strings.TrimPrefix(r.URL.Path, "/admin/")
+		if path == "" {
+			path = "index.html"
+		}
+		// 如果文件存在，直接服务
+		if f, err := distFS.Open(path); err == nil {
+			f.Close()
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		// SPA fallback: 返回 index.html
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = "/admin/index.html"
+		fileServer.ServeHTTP(w, r2)
 	})
 	mux.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/", 302)
