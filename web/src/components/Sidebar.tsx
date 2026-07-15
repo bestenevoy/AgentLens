@@ -1,5 +1,6 @@
 import type { RequestListItem } from '../types';
 import { fmtTime, fmtDur, cacheHitRate } from '../utils';
+import { useT } from '../i18n';
 
 interface Props {
   items: RequestListItem[];
@@ -10,16 +11,17 @@ interface Props {
 }
 
 export function Sidebar({ items, currentId, onSelect, sidebarVisible, overlay }: Props) {
+  const t = useT();
   return (
     <aside className={`sidebar ${sidebarVisible ? '' : 'hidden'} ${overlay ? 'overlay' : ''}`}>
       {items.length === 0 ? (
-        <div className="empty">暂无请求</div>
+        <div className="empty">{t('sidebar.empty')}</div>
       ) : (
         items.map(it => {
           const dur = it.duration_ms ? fmtDur(it.duration_ms) : '';
           const tok = it.total_tokens ? `↑${it.prompt_tokens} ↓${it.completion_tokens}` : '';
           const cache = it.cached_tokens && it.cached_tokens > 0
-            ? `cache ${cacheHitRate(it.prompt_tokens, it.cached_tokens).toFixed(0)}%` : '';
+            ? `${t('stats.cache')} ${cacheHitRate(it.prompt_tokens, it.cached_tokens).toFixed(0)}%` : '';
           return (
             <div
               key={it.id}
@@ -32,7 +34,7 @@ export function Sidebar({ items, currentId, onSelect, sidebarVisible, overlay }:
               </div>
               <div className="meta">
                 <span className={`tag ${it.response_source}`}>{it.response_source}</span>
-                <span className="tag">{it.messages_count}msg</span>
+                <span className="tag">{it.messages_count}{t('sidebar.msg')}</span>
                 {dur && <span className="tag dur">{dur}</span>}
                 {tok && <span className="tag tok">{tok}</span>}
                 {cache && <span className="tag cache">{cache}</span>}

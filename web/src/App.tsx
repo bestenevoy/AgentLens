@@ -7,6 +7,9 @@ import { Detail } from './components/Detail';
 import { SettingsModal } from './components/SettingsModal';
 import { CustomEditor } from './components/CustomEditor';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { useT, useLang } from './i18n';
+import { useTheme } from './theme';
+import type { Theme } from './theme';
 
 function toast(msg: string, ok = true) {
   const t = document.createElement('div');
@@ -18,6 +21,9 @@ function toast(msg: string, ok = true) {
 }
 
 export default function App() {
+  const t = useT();
+  const [lang, setLang] = useLang();
+  const [theme, setTheme] = useTheme();
   const [config, setConfig] = useState<ServerConfig>({ mode: 'mock', selected_provider_id: null, providers: [], max_records: 50 });
   const [items, setItems] = useState<RequestListItem[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -37,29 +43,26 @@ export default function App() {
       const c = await getConfig();
       setConfig(c);
     } catch (e) {
-      toast('加载配置失败: ' + (e instanceof Error ? e.message : String(e)), false);
+      toast(t('config.load.fail') + (e instanceof Error ? e.message : String(e)), false);
     }
-  }, []);
+  }, [t]);
 
   // Load list (with diff check to avoid unnecessary re-renders)
   const loadList = useCallback(async () => {
     try {
       const data = await listRequests();
       const next = data || [];
-      // 简单 diff：比较 JSON 字符串，避免完全相同的列表触发重渲染
       setItems(prev => {
         if (prev.length !== next.length) return next;
         if (prev.length === 0) return next;
-        // 比较每条记录的 id + timestamp（足够检测变化）
         for (let i = 0; i < prev.length; i++) {
           if (prev[i].id !== next[i].id || prev[i].timestamp !== next[i].timestamp) {
             return next;
           }
         }
-        return prev; // 无变化，返回旧引用
+        return prev;
       });
     } catch (e) {
-      // 静默处理轮询错误，避免刷屏
       if (e instanceof ApiError && e.status >= 500) {
         console.error('Failed to load requests:', e.message);
       }
@@ -94,7 +97,7 @@ export default function App() {
   // Mouse near left edge: show sidebar as overlay
   useEffect(() => {
     function handleMouseMove(e: MouseEvent) {
-      if (window.innerWidth >= 768) return; // only on narrow
+      if (window.innerWidth >= 768) return;
       if (e.clientX < 8) {
         setSidebarHover(true);
         if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
@@ -115,9 +118,9 @@ export default function App() {
       const r = await getRequest(id);
       setCurrentRecord(r);
     } catch (e) {
-      toast('加载详情失败: ' + (e instanceof Error ? e.message : String(e)), false);
+      toast(t('detail.load.fail') + (e instanceof Error ? e.message : String(e)), false);
     }
-  }, []);
+  }, [t]);
 
   // Mode change
   async function changeMode(mode: 'mock' | 'proxy') {
@@ -125,10 +128,10 @@ export default function App() {
     setConfig(newConfig);
     try {
       await putConfig({ mode, selected_provider_id: config.selected_provider_id, max_records: config.max_records });
-      toast('模式: ' + mode);
+      toast(t('mode.switched') + mode);
     } catch (e) {
-      toast('切换模式失败', false);
-      setConfig(config); // rollback
+      toast(t('mode.switch.fail'), false);
+      setConfig(config);
     }
   }
 
@@ -138,22 +141,22 @@ export default function App() {
     try {
       await putConfig({ mode: config.mode, selected_provider_id: pid, max_records: config.max_records });
       await loadConfig();
-      toast('已切换 Provider');
+      toast(t('provider.switched'));
     } catch (e) {
-      toast('切换 Provider 失败', false);
+      toast(t('provider.switch.fail'), false);
     }
   }
 
   // Clear
   async function doClear() {
-    if (!confirm('清空所有请求记录？')) return;
+    if (!confirm(t('clear.confirm'))) return;
     try {
       await clearRequests();
       setCurrentId(null);
       setCurrentRecord(null);
       loadList();
     } catch (e) {
-      toast('清空失败', false);
+      toast(t('clear.fail'), false);
     }
   }
 
@@ -180,24 +183,24 @@ export default function App() {
             } else {
               setSidebarVisible(!sidebarVisible);
             }
-          }} title="切换侧边栏">
+          }} title="Toggle sidebar">
             ☰
           </button>
-          <label>模式:
+          <label>{t('mode')}:
             <select value={config.mode} onChange={e => changeMode(e.target.value as 'mock' | 'proxy')}>
               <option value="mock">mock</option>
               <option value="proxy">proxy</option>
             </select>
           </label>
           {config.mode === 'proxy' && (
-            <label>Provider:
+            <label>{t('provider')}:
               <select value={config.selected_provider_id || ''} onChange={e => changeProvider(e.target.value)}>
-                <option value="">(未选择)</option>
+                <option value="">(—)</option>
                 {config.providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
           )}
-          <button onClick={() => setShowSettings(true)}>⚙ 设置</button>
+          <button onClick={() => setShowSettings(true)}>⚙ {t('settings')}</button>
           {(stats.inTok > 0 || stats.outTok > 0) && (
             <span className="stats">
               <span className="stat-item"><span className="stat-label">↑</span><span className="stat-val in">{stats.inTok}</span></span>
@@ -205,13 +208,24 @@ export default function App() {
               <span className="stat-item"><span className="stat-label">↓</span><span className="stat-val out">{stats.outTok}</span></span>
               {stats.cached > 0 && (<>
                 <span className="sep">|</span>
-                <span className="stat-item"><span className="stat-label">cache</span><span className="stat-val cache">{stats.cached} ({stats.cacheRate}%)</span></span>
+                <span className="stat-item"><span className="stat-label">{t('stats.cache')}</span><span className="stat-val cache">{stats.cached} ({stats.cacheRate}%)</span></span>
               </>)}
             </span>
           )}
-          <label><input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} /> 自动</label>
-          <button onClick={loadList}>刷新</button>
-          <button className="danger small" onClick={doClear}>清空</button>
+          <label><input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} /> {t('auto')}</label>
+          <button onClick={loadList}>{t('refresh')}</button>
+          <button className="danger small" onClick={doClear}>{t('clear')}</button>
+          <label>{t('theme')}:
+            <select value={theme} onChange={e => setTheme(e.target.value as Theme)}>
+              <option value="auto">{t('theme.auto')}</option>
+              <option value="light">{t('theme.light')}</option>
+              <option value="dark">{t('theme.dark')}</option>
+            </select>
+          </label>
+          <select value={lang} onChange={e => setLang(e.target.value as 'en' | 'cn')}>
+            <option value="en">EN</option>
+            <option value="cn">中文</option>
+          </select>
         </div>
       </header>
 
@@ -229,7 +243,7 @@ export default function App() {
             <Detail record={currentRecord} onEditCustom={(hash, fill) => setCustomEditor({ hash, fill: !!fill })} />
           </ErrorBoundary>
         ) : (
-          <section className="detail"><div className="empty">选择左侧的请求查看详情</div></section>
+          <section className="detail"><div className="empty">{t('select.request')}</div></section>
         )}
       </div>
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { listCustom, setCustom, deleteCustom } from '../api';
 import type { RequestRecord, ChatCompletionResponse } from '../types';
+import { useT } from '../i18n';
 
 interface Props {
   hash: string;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function CustomEditor({ hash, currentRecord, onClose, toast }: Props) {
+  const t = useT();
   const [text, setText] = useState('');
 
   useEffect(() => {
@@ -26,32 +28,32 @@ export function CustomEditor({ hash, currentRecord, onClose, toast }: Props) {
         setText(JSON.stringify({
           id: 'chatcmpl-mock', object: 'chat.completion', created: Math.floor(Date.now() / 1000),
           model: currentRecord?.body?.model || 'mock-model',
-          choices: [{ index: 0, message: { role: 'assistant', content: '在此编辑' }, finish_reason: 'stop' }],
+          choices: [{ index: 0, message: { role: 'assistant', content: t('custom.placeholder') }, finish_reason: 'stop' }],
           usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
         }, null, 2));
       }
     })();
     return () => { cancelled = true; };
-  }, [hash, currentRecord]);
+  }, [hash, currentRecord, t]);
 
   async function save() {
     try {
       const parsed: ChatCompletionResponse = JSON.parse(text);
       await setCustom(hash, parsed);
-      toast('已保存自定义响应');
+      toast(t('custom.saved'));
       onClose();
     } catch (e) {
-      toast('JSON 解析失败: ' + (e instanceof Error ? e.message : String(e)), false);
+      toast(t('custom.json_fail') + (e instanceof Error ? e.message : String(e)), false);
     }
   }
 
   async function del() {
     try {
       await deleteCustom(hash);
-      toast('已删除');
+      toast(t('custom.deleted'));
       onClose();
     } catch (e) {
-      toast('删除失败: ' + (e instanceof Error ? e.message : String(e)), false);
+      toast(t('custom.delete_fail') + (e instanceof Error ? e.message : String(e)), false);
     }
   }
 
@@ -62,16 +64,16 @@ export function CustomEditor({ hash, currentRecord, onClose, toast }: Props) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2>自定义响应 <span style={{ color: 'var(--yellow)', fontFamily: 'monospace' }}>{hash}</span></h2>
+        <h2>{t('custom.title')} <span style={{ color: 'var(--yellow)', fontFamily: 'monospace' }}>{hash}</span></h2>
         <p style={{ color: 'var(--text-dim)', fontSize: 12, marginBottom: 8 }}>
-          相同 hash 的后续请求会直接返回这里设置的响应（优先级最高）。
+          {t('custom.desc')}
         </p>
         <textarea className="editor" value={text} onChange={e => setText(e.target.value)} />
         <div className="actions">
-          <button onClick={fillFromResponse}>用当前响应填充</button>
-          <button className="danger" onClick={del}>删除自定义</button>
-          <button onClick={onClose}>取消</button>
-          <button className="primary" onClick={save}>保存</button>
+          <button onClick={fillFromResponse}>{t('custom.fill')}</button>
+          <button className="danger" onClick={del}>{t('custom.delete')}</button>
+          <button onClick={onClose}>{t('custom.cancel')}</button>
+          <button className="primary" onClick={save}>{t('settings.save')}</button>
         </div>
       </div>
     </div>
