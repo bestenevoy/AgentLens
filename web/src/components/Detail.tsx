@@ -169,14 +169,13 @@ function ParamsBlock({ body }: { body: ChatCompletionBody }) {
 function ToolsBlock({ tools }: { tools: ToolDef[] }) {
   const t = useT();
   const defaultCollapsed = tools.length > TOOL_COLLAPSE_THRESHOLD;
-  const names = tools.map(t2 => t2.function?.name || '?').join(', ');
   return (
-    <Block title={`${t('block.tools')} (${tools.length})`} summary={names} json={tools}>
+    <div>
       {defaultCollapsed && (
         <div className="msg-collapse-hint">{t('tools.collapse_hint', { n: tools.length })}</div>
       )}
       {tools.map((tool, i) => <ToolDefCard key={i} tool={tool} defaultCollapsed={defaultCollapsed} />)}
-    </Block>
+    </div>
   );
 }
 
