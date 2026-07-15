@@ -2,13 +2,16 @@ import { useState } from 'react';
 import type { RequestRecord, ChatCompletionBody, ChatCompletionResponse, ChatMessage, ToolDef, ToolCall, ContentPart } from '../types';
 import { fmtDur, cacheHitRate, fmtDateTime } from '../utils';
 import { useT } from '../i18n';
+import { JsonTree } from './JsonTree';
+import { Markdown } from './Markdown';
 
 interface Props {
   record: RequestRecord;
   onEditCustom: (hash: string, fillFromResponse?: boolean) => void;
 }
 
-type TabKey = 'messages' | 'tools' | 'summary' | 'upstream' | 'response';
+type TabKey = 'messages' | 'tools' | 'response' | 'summary' | 'upstream';
+type MsgView = 'markdown' | 'raw' | 'json';
 
 const MSG_COLLAPSE_THRESHOLD = 5;
 const TOOL_COLLAPSE_THRESHOLD = 5;
@@ -23,9 +26,9 @@ export function Detail({ record, onEditCustom }: Props) {
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'messages', label: `${t('tab.messages')} (${msgCount})` },
     ...(hasTools ? [{ key: 'tools' as TabKey, label: `${t('tab.tools')} (${body.tools!.length})` }] : []),
+    { key: 'response', label: t('tab.response') },
     { key: 'summary', label: t('tab.summary') },
     ...(hasUpstream ? [{ key: 'upstream' as TabKey, label: t('tab.upstream') }] : []),
-    { key: 'response', label: t('tab.response') },
   ];
 
   const [tab, setTab] = useState<TabKey>('messages');
@@ -34,52 +37,29 @@ export function Detail({ record, onEditCustom }: Props) {
     <section className="detail">
       <div className="detail-tabs">
         {tabs.map(t2 => (
-          <button
-            key={t2.key}
-            className={`tab-btn ${tab === t2.key ? 'active' : ''}`}
-            onClick={() => setTab(t2.key)}
-          >
+          <button key={t2.key} className={`tab-btn ${tab === t2.key ? 'active' : ''}`} onClick={() => setTab(t2.key)}>
             {t2.label}
           </button>
         ))}
       </div>
       <div className="detail-tab-body">
-        {tab === 'messages' && (
-          <MessagesBlock messages={body.messages || []} />
-        )}
-        {tab === 'tools' && hasTools && body.tools && (
-          <ToolsBlock tools={body.tools} />
-        )}
-        {tab === 'summary' && (
-          <>
-            <SummaryBlock record={record} onEditCustom={onEditCustom} />
-            <ParamsBlock body={body} />
-          </>
-        )}
-        {tab === 'upstream' && (
-          <>
-            {record.proxy_request && <ProxyRequestBlock data={record.proxy_request} model={body.model} />}
-            {record.proxy_response && <ProxyResponseBlock resp={record.proxy_response} status={record.proxy_status} />}
-            {!record.proxy_request && !record.proxy_response && (
-              <div className="empty">{t('msg.no_upstream')}</div>
-            )}
-          </>
-        )}
+        {tab === 'messages' && <MessagesBlock messages={body.messages || []} />}
+        {tab === 'tools' && hasTools && body.tools && <ToolsBlock tools={body.tools} />}
         {tab === 'response' && (
           <>
             {record.error && <div className="error-box">⚠️ {record.error}</div>}
             {record.response ? (
-              <ResponseBlock
-                resp={record.response}
-                promptTokens={record.prompt_tokens}
-                completionTokens={record.completion_tokens}
-                cachedTokens={record.cached_tokens}
-                hash={record.hash}
-                onEditCustom={onEditCustom}
-              />
-            ) : (
-              !record.error && <div className="empty">{t('msg.no_response')}</div>
-            )}
+              <ResponseBlock resp={record.response} promptTokens={record.prompt_tokens} completionTokens={record.completion_tokens}
+                cachedTokens={record.cached_tokens} hash={record.hash} onEditCustom={onEditCustom} />
+            ) : !record.error && <div className="empty">{t('msg.no_response')}</div>}
+          </>
+        )}
+        {tab === 'summary' && (<><SummaryBlock record={record} onEditCustom={onEditCustom} /><ParamsBlock body={body} /></>)}
+        {tab === 'upstream' && (
+          <>
+            {record.proxy_request && <ProxyRequestBlock data={record.proxy_request} model={body.model} />}
+            {record.proxy_response && <ProxyResponseBlock resp={record.proxy_response} status={record.proxy_status} />}
+            {!record.proxy_request && !record.proxy_response && <div className="empty">{t('msg.no_upstream')}</div>}
           </>
         )}
       </div>
@@ -87,26 +67,40 @@ export function Detail({ record, onEditCustom }: Props) {
   );
 }
 
-// ============ Block wrapper ============
+// ============ View toggle group ============
+function ViewToggleGroup({ view, onChange, options }: { view: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
+  return (
+    <div className="view-toggle-group" onClick={e => e.stopPropagation()}>
+      {options.map(opt => (
+        <button key={opt.value} className={view === opt.value ? 'active' : ''} onClick={() => onChange(opt.value)}>{opt.label}</button>
+      ))}
+    </div>
+  );
+}
+
+const msgViewOptions = [
+  { value: 'markdown', label: 'MD' },
+  { value: 'raw', label: 'Raw' },
+  { value: 'json', label: 'JSON' },
+];
+
+// ============ Block wrapper (for summary/params/upstream) ============
 function Block({ title, children, json, collapsed = false, summary = '', extra }: {
   title: string; children: React.ReactNode; json: unknown; collapsed?: boolean; summary?: string; extra?: React.ReactNode;
 }) {
   const [isCollapsed, setIsCollapsed] = useState(collapsed);
   const [view, setView] = useState<'human' | 'json'>('human');
-
   return (
     <div className={`block ${isCollapsed ? 'collapsed' : ''}`} data-view={view}>
       <h3 onClick={(e) => { if (!(e.target as HTMLElement).closest('button')) setIsCollapsed(!isCollapsed); }}>
         <span className="caret">▾</span>
         {title} {extra}
         {summary && <span className="block-summary">{summary}</span>}
-        <button className="view-toggle small" onClick={(e) => { e.stopPropagation(); setView(view === 'human' ? 'json' : 'human'); }}>
-          {view === 'human' ? 'JSON' : 'Human'}
-        </button>
+        <ViewToggleGroup view={view} onChange={v => setView(v as 'human' | 'json')} options={[{ value: 'human', label: 'Human' }, { value: 'json', label: 'JSON' }]} />
       </h3>
       <div className="block-body">
         <div className="block-human">{children}</div>
-        <div className="block-json"><pre>{JSON.stringify(json, null, 2)}</pre></div>
+        <div className="block-json"><JsonTree data={json} /></div>
       </div>
     </div>
   );
@@ -117,9 +111,7 @@ function SummaryBlock({ record, onEditCustom }: { record: RequestRecord; onEditC
   const t = useT();
   const model = record.body?.model;
   const dur = record.duration_ms ? fmtDur(record.duration_ms) : '-';
-  const cacheRate = record.prompt_tokens && record.cached_tokens
-    ? cacheHitRate(record.prompt_tokens, record.cached_tokens).toFixed(1) + '%' : '-';
-
+  const cacheRate = record.prompt_tokens && record.cached_tokens ? cacheHitRate(record.prompt_tokens, record.cached_tokens).toFixed(1) + '%' : '-';
   const summaryData = {
     id: record.id, hash: record.hash,
     [t('summary.request_time')]: fmtDateTime(record.timestamp),
@@ -132,21 +124,12 @@ function SummaryBlock({ record, onEditCustom }: { record: RequestRecord; onEditC
     [t('summary.cache_rate')]: cacheRate,
     path: record.path, method: record.method, model, source: record.response_source, error: record.error,
   };
-
   return (
-    <Block
-      title={t('block.summary')}
+    <Block title={t('block.summary')}
       summary={`${model || '-'} · ${record.response_source}${record.error ? ' · err' : ''} · ${dur}`}
-      extra={
-        <>
-          <span className="hash">{record.hash}</span>
-          <span className={`tag ${record.response_source}`}>{record.response_source}</span>
-          <button className="small" onClick={() => onEditCustom(record.hash)}>{t('btn.edit_custom')}</button>
-        </>
-      }
-      json={summaryData}
-    >
-      <pre>{JSON.stringify(summaryData, null, 2)}</pre>
+      extra={<><span className="hash">{record.hash}</span><span className={`tag ${record.response_source}`}>{record.response_source}</span><button className="small" onClick={() => onEditCustom(record.hash)}>{t('btn.edit_custom')}</button></>}
+      json={summaryData}>
+      <JsonTree data={summaryData} />
     </Block>
   );
 }
@@ -155,12 +138,11 @@ function SummaryBlock({ record, onEditCustom }: { record: RequestRecord; onEditC
 function ParamsBlock({ body }: { body: ChatCompletionBody }) {
   const t = useT();
   const params = { ...body };
-  delete params.messages;
-  delete params.tools;
+  delete params.messages; delete params.tools;
   const keys = Object.keys(params).filter(k => params[k] != null);
   return (
     <Block title={t('block.params')} summary={keys.length ? keys.join(', ') : '(—)'} json={params}>
-      <pre>{JSON.stringify(params, null, 2)}</pre>
+      <JsonTree data={params} />
     </Block>
   );
 }
@@ -171,9 +153,7 @@ function ToolsBlock({ tools }: { tools: ToolDef[] }) {
   const defaultCollapsed = tools.length > TOOL_COLLAPSE_THRESHOLD;
   return (
     <div>
-      {defaultCollapsed && (
-        <div className="msg-collapse-hint">{t('tools.collapse_hint', { n: tools.length })}</div>
-      )}
+      {defaultCollapsed && <div className="msg-collapse-hint">{t('tools.collapse_hint', { n: tools.length })}</div>}
       {tools.map((tool, i) => <ToolDefCard key={i} tool={tool} defaultCollapsed={defaultCollapsed} />)}
     </div>
   );
@@ -186,7 +166,6 @@ function ToolDefCard({ tool, defaultCollapsed = false }: { tool: ToolDef; defaul
   const params = fn.parameters?.properties || {};
   const required = new Set(fn.parameters?.required || []);
   const hasParams = Object.keys(params).length > 0;
-
   return (
     <div className={`tool-card ${collapsed ? 'collapsed' : ''}`}>
       <div className="tool-card-header" onClick={() => setCollapsed(!collapsed)}>
@@ -242,59 +221,67 @@ function MessagesBlock({ messages }: { messages: ChatMessage[] }) {
   const t = useT();
   const defaultCollapsed = messages.length > MSG_COLLAPSE_THRESHOLD;
   const groups = groupMessages(messages);
-  const legend = <span style={{ fontSize: 10, color: 'var(--text-mute)', textTransform: 'none' }}>{t('msg.legend')}</span>;
   return (
-    <Block title={`${t('block.messages')} (${messages.length}) ${legend}`} json={messages}>
-      {defaultCollapsed && (
-        <div className="msg-collapse-hint">{t('msg.collapse_hint', { n: messages.length })}</div>
-      )}
+    <div>
+      <div className="msg-legend">{t('msg.legend')}</div>
+      {defaultCollapsed && <div className="msg-collapse-hint">{t('msg.collapse_hint', { n: messages.length })}</div>}
       {groups.map((g, gi) => {
         if (g.type === 'batch') {
           return (
             <div key={gi} className="tool-batch">
               <div className="tool-batch-label">{t('msg.tool_batch')}</div>
-              {g.msgs.map(({ msg, index }) => (
-                <MessageCard key={index} msg={msg} index={index} defaultCollapsed={defaultCollapsed} />
-              ))}
+              {g.msgs.map(({ msg, index }) => <MessageCard key={index} msg={msg} index={index} defaultCollapsed={defaultCollapsed} />)}
             </div>
           );
         }
         return <MessageCard key={gi} msg={g.msg} index={g.index} defaultCollapsed={defaultCollapsed} />;
       })}
-    </Block>
+    </div>
   );
 }
 
 function MessageCard({ msg, index, defaultCollapsed = false }: { msg: ChatMessage; index: number; defaultCollapsed?: boolean }) {
   const t = useT();
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
-  const [view, setView] = useState<'human' | 'json'>('human');
+  const [view, setView] = useState<MsgView>('markdown');
   const role = msg.role || '?';
   const summary = msgSummary(msg, t);
 
   return (
     <div className={`msg-card role-${role} ${collapsed ? 'collapsed' : ''}`} data-view={view}>
-      <div className="msg-header" onClick={(e) => { if (!(e.target as HTMLElement).closest('button')) setCollapsed(!collapsed); }}>
+      <div className="msg-header" onClick={(e) => { if (!(e.target as HTMLElement).closest('.view-toggle-group') && !(e.target as HTMLElement).closest('button')) setCollapsed(!collapsed); }}>
         <span className="msg-caret">▾</span>
         <DirArrow role={role} />
         <span className={`role-badge role-${role}`}>{role}</span>
         <span className="msg-index">#{index}</span>
         <span className="msg-summary">{summary}</span>
-        <button className="view-toggle small msg-view-toggle" onClick={(e) => { e.stopPropagation(); setView(view === 'human' ? 'json' : 'human'); }} title="Toggle JSON view">
-          {view === 'human' ? 'JSON' : 'Human'}
-        </button>
+        <ViewToggleGroup view={view} onChange={v => setView(v as MsgView)} options={msgViewOptions} />
       </div>
       <div className="msg-body">
         <div className="msg-human">
-          {msg.content != null && <Content content={msg.content} />}
+          {msg.content != null && (view === 'markdown'
+            ? <MarkdownContent content={msg.content} />
+            : <Content content={msg.content} />)}
           {msg.tool_calls?.map((tc: ToolCall, i: number) => <ToolCallCard key={i} tc={tc} />)}
           {msg.tool_call_id && <div className="tool-result-meta">tool_call_id: <code>{msg.tool_call_id}</code></div>}
           {msg.name && <div className="tool-result-meta">name: <code>{msg.name}</code></div>}
         </div>
-        <div className="msg-json"><pre>{JSON.stringify(msg, null, 2)}</pre></div>
+        <div className="msg-json"><JsonTree data={msg} /></div>
       </div>
     </div>
   );
+}
+
+function MarkdownContent({ content }: { content: string | ContentPart[] }) {
+  if (typeof content === 'string') return <div className="msg-content markdown-body"><Markdown text={content} /></div>;
+  if (Array.isArray(content)) {
+    return <>{content.map((part, i) => {
+      if (part.type === 'text') return <div key={i} className="msg-content markdown-body"><Markdown text={part.text || ''} /></div>;
+      if (part.type === 'image_url') return <div key={i} className="msg-content" style={{ color: 'var(--accent)' }}>[image: {(part.image_url?.url || '').substring(0, 60)}]</div>;
+      return <pre key={i}>{JSON.stringify(part, null, 2)}</pre>;
+    })}</>;
+  }
+  return <pre>{JSON.stringify(content, null, 2)}</pre>;
 }
 
 function DirArrow({ role }: { role: string }) {
@@ -357,7 +344,7 @@ function ProxyRequestBlock({ data, model }: { data: ChatCompletionBody; model?: 
   const t = useT();
   return (
     <Block title={t('block.proxy.request')} collapsed summary={`model: ${data.model || model || '-'}`} json={data}>
-      <pre>{JSON.stringify(data, null, 2)}</pre>
+      <JsonTree data={data} />
     </Block>
   );
 }
@@ -371,31 +358,40 @@ function ProxyResponseBlock({ resp, status }: { resp: ChatCompletionResponse; st
   );
 }
 
-// ============ Response ============
+// ============ Response (no Block wrapper) ============
 function ResponseBlock({ resp, promptTokens, completionTokens, cachedTokens, hash, onEditCustom }: {
   resp: ChatCompletionResponse; promptTokens?: number; completionTokens?: number; cachedTokens?: number; hash: string;
   onEditCustom: (h: string, fill?: boolean) => void;
 }) {
   const t = useT();
+  const [view, setView] = useState<MsgView>('markdown');
   const respMsg = resp.choices?.[0]?.message;
   const respSummary = respMsg?.content ? String(respMsg.content).substring(0, 40) : (respMsg?.tool_calls ? 'tool_calls' : '-');
   const tokExtra = promptTokens ? <span className="tag tok">↑{promptTokens} ↓{completionTokens}</span> : null;
-  const cacheExtra = cachedTokens && cachedTokens > 0
-    ? <span className="tag cache">cache {cacheHitRate(promptTokens, cachedTokens).toFixed(0)}%</span> : null;
+  const cacheExtra = cachedTokens && cachedTokens > 0 ? <span className="tag cache">cache {cacheHitRate(promptTokens, cachedTokens).toFixed(0)}%</span> : null;
 
   return (
-    <Block
-      title={t('block.response')}
-      summary={respSummary}
-      extra={<>{tokExtra}{cacheExtra}<button className="small" onClick={() => onEditCustom(hash, true)}>{t('btn.set_custom')}</button></>}
-      json={resp}
-    >
-      <ResponseHuman resp={resp} />
-    </Block>
+    <div className="response-block" data-view={view}>
+      <div className="response-header">
+        <span className="block-title">{t('block.response')}</span>
+        <span className="block-summary-inline">{respSummary}</span>
+        {tokExtra}{cacheExtra}
+        <button className="small" onClick={() => onEditCustom(hash, true)}>{t('btn.set_custom')}</button>
+        <ViewToggleGroup view={view} onChange={v => setView(v as MsgView)} options={msgViewOptions} />
+      </div>
+      <div className="response-body">
+        <div className="response-human">
+          <ResponseHuman resp={resp} renderMarkdown={view === 'markdown'} />
+        </div>
+        <div className="response-json">
+          <JsonTree data={resp} />
+        </div>
+      </div>
+    </div>
   );
 }
 
-function ResponseHuman({ resp }: { resp: ChatCompletionResponse }) {
+function ResponseHuman({ resp, renderMarkdown = false }: { resp: ChatCompletionResponse; renderMarkdown?: boolean }) {
   const t = useT();
   if (!resp) return <span style={{ color: 'var(--text-mute)' }}>{t('response.no_response')}</span>;
   if (resp.error) return <div className="error-box">⚠️ {resp.error.message || JSON.stringify(resp.error)}</div>;
@@ -409,7 +405,9 @@ function ResponseHuman({ resp }: { resp: ChatCompletionResponse }) {
         <span className="role-badge role-assistant">assistant</span>
         <span className="finish-reason">{t('response.finish')} {choice.finish_reason || ''}</span>
       </div>
-      {msg.content != null && <Content content={msg.content} />}
+      {msg.content != null && (renderMarkdown
+        ? <MarkdownContent content={msg.content} />
+        : <Content content={msg.content} />)}
       {msg.tool_calls?.map((tc: ToolCall, i: number) => <ToolCallCard key={i} tc={tc} />)}
       {resp.usage && (
         <div className="usage">

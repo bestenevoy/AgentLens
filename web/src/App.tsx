@@ -178,27 +178,18 @@ export default function App() {
         <h1>OpenAI Mock Inspector</h1>
         <div className="controls">
           <button className="icon" onClick={() => {
-            if (overlay) {
-              setSidebarHover(!sidebarHover);
-            } else {
-              setSidebarVisible(!sidebarVisible);
-            }
-          }} title="Toggle sidebar">
-            ☰
-          </button>
-          <label>{t('mode')}:
-            <select value={config.mode} onChange={e => changeMode(e.target.value as 'mock' | 'proxy')}>
-              <option value="mock">mock</option>
-              <option value="proxy">proxy</option>
-            </select>
-          </label>
+            if (overlay) setSidebarHover(!sidebarHover);
+            else setSidebarVisible(!sidebarVisible);
+          }} title="Toggle sidebar">☰</button>
+          <select value={config.mode} onChange={e => changeMode(e.target.value as 'mock' | 'proxy')} title={t('mode')}>
+            <option value="mock">mock</option>
+            <option value="proxy">proxy</option>
+          </select>
           {config.mode === 'proxy' && (
-            <label>{t('provider')}:
-              <select value={config.selected_provider_id || ''} onChange={e => changeProvider(e.target.value)}>
-                <option value="">(—)</option>
-                {config.providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </label>
+            <select value={config.selected_provider_id || ''} onChange={e => changeProvider(e.target.value)} title={t('provider')}>
+              <option value="">(—)</option>
+              {config.providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
           )}
           <button onClick={() => setShowSettings(true)}>⚙ {t('settings')}</button>
           {(stats.inTok > 0 || stats.outTok > 0) && (
@@ -212,17 +203,15 @@ export default function App() {
               </>)}
             </span>
           )}
-          <label><input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} /> {t('auto')}</label>
+          <button className={autoRefresh ? 'toggle active' : 'toggle'} onClick={() => setAutoRefresh(!autoRefresh)}>{t('auto')}</button>
           <button onClick={loadList}>{t('refresh')}</button>
-          <button className="danger small" onClick={doClear}>{t('clear')}</button>
-          <label>{t('theme')}:
-            <select value={theme} onChange={e => setTheme(e.target.value as Theme)}>
-              <option value="auto">{t('theme.auto')}</option>
-              <option value="light">{t('theme.light')}</option>
-              <option value="dark">{t('theme.dark')}</option>
-            </select>
-          </label>
-          <select value={lang} onChange={e => setLang(e.target.value as 'en' | 'cn')}>
+          <button className="danger" onClick={doClear}>{t('clear')}</button>
+          <select value={theme} onChange={e => setTheme(e.target.value as Theme)} title={t('theme')}>
+            <option value="auto">{t('theme.auto')}</option>
+            <option value="light">{t('theme.light')}</option>
+            <option value="dark">{t('theme.dark')}</option>
+          </select>
+          <select value={lang} onChange={e => setLang(e.target.value as 'en' | 'cn')} title={t('language')}>
             <option value="en">EN</option>
             <option value="cn">中文</option>
           </select>
