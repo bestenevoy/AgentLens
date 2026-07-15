@@ -1,6 +1,6 @@
-# OpenAI Mock Inspector
+# AgentLens
 
-An observable OpenAI-compatible API mock / proxy. Single-file deployment with a built-in visual inspection console.
+An observation console for how agents talk to LLMs — intercepts OpenAI-compatible calls and visualizes context, tools, and tokens. Single-file deployment with mock / proxy / custom responses built in.
 
 ![Inspector Console](media/screen.png)
 
@@ -14,7 +14,7 @@ An observable OpenAI-compatible API mock / proxy. Single-file deployment with a 
 - **Visual Inspection Console**: View request/response details in the browser with switchable Human and JSON views
 - **Provider Management**: Save multiple proxy targets and switch between them at any time
 - **Token Statistics**: Automatically extracts input/output/cache tokens and cache hit rate
-- **SQLite Persistence**: All data (requests, config, custom responses) is stored in a single `openaimock.db` with configurable retention
+- **SQLite Persistence**: All data (requests, config, custom responses) is stored in a single `agentlens.db` with configurable retention
 - **i18n**: Switch between English and Chinese in the console
 - **Theme**: Light / Dark / Auto theme switching
 
@@ -26,10 +26,10 @@ Visit the [Releases page](../../releases) and download the executable for your p
 
 | Platform | File |
 |----------|------|
-| Windows | `openaimock-windows-amd64.exe` |
-| Linux | `openaimock-linux-amd64` |
-| macOS (Intel) | `openaimock-darwin-amd64` |
-| macOS (Apple Silicon) | `openaimock-darwin-arm64` |
+| Windows | `agentlens-windows-amd64.exe` |
+| Linux | `agentlens-linux-amd64` |
+| macOS (Intel) | `agentlens-darwin-amd64` |
+| macOS (Apple Silicon) | `agentlens-darwin-arm64` |
 
 Run directly after download — no runtime environment required.
 
@@ -40,10 +40,10 @@ Run directly after download — no runtime environment required.
 cd web && npm install && npm run build && cd ..
 
 # Build the backend (frontend assets are embedded into the binary)
-go build -o openaimock.exe .
+go build -o agentlens.exe .
 
 # Run
-./openaimock.exe
+./agentlens.exe
 ```
 
 ### Local Development
@@ -144,7 +144,7 @@ Click the message header to collapse it (the content area remains freely selecta
 
 ## Data Storage
 
-All data is stored in a single SQLite database `openaimock.db`, generated automatically at runtime:
+All data is stored in a single SQLite database `agentlens.db`, generated automatically at runtime:
 
 | Table | Contents |
 |-------|----------|
@@ -152,11 +152,7 @@ All data is stored in a single SQLite database `openaimock.db`, generated automa
 | `config` | Provider configs, mode, max records |
 | `custom_responses` | Custom responses bound by request hash |
 
-The retention count is configurable in ⚙ Settings -> General Settings (default 50 entries).
-
-### Migrating from old versions
-
-On first launch, the server automatically migrates legacy `state.json` and `logs.jsonl` files into the database, renaming the originals to `.bak`. Delete `openaimock.db` to reset all configurations and records.
+The retention count is configurable in ⚙ Settings -> General Settings (default 50 entries). Delete `agentlens.db` to reset all configurations and records.
 
 ## Project Structure
 

@@ -45,23 +45,23 @@ jobs:
           - os: windows
             arch: amd64
             runner: windows-latest
-            artifact_name: openaimock-windows-amd64.exe
-            binary_name: openaimock.exe
+            artifact_name: agentlens-windows-amd64.exe
+            binary_name: agentlens.exe
           - os: linux
             arch: amd64
             runner: ubuntu-latest
-            artifact_name: openaimock-linux-amd64
-            binary_name: openaimock
+            artifact_name: agentlens-linux-amd64
+            binary_name: agentlens
           - os: darwin
             arch: amd64
             runner: macos-15-intel
-            artifact_name: openaimock-darwin-amd64
-            binary_name: openaimock
+            artifact_name: agentlens-darwin-amd64
+            binary_name: agentlens
           - os: darwin
             arch: arm64
             runner: macos-latest
-            artifact_name: openaimock-darwin-arm64
-            binary_name: openaimock
+            artifact_name: agentlens-darwin-arm64
+            binary_name: agentlens
 
     steps:
       - name: Checkout

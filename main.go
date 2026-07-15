@@ -139,7 +139,7 @@ func main() {
 
 	// 启动服务器
 	go func() {
-		fmt.Printf("OpenAI Mock Inspector running on http://localhost%s\n", addr)
+		fmt.Printf("AgentLens running on http://localhost%s\n", addr)
 		fmt.Printf("  OpenAI API: http://localhost%s/v1\n", addr)
 		fmt.Printf("  Admin UI:   http://localhost%s/admin/\n", addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

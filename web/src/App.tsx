@@ -175,7 +175,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>OpenAI Mock Inspector</h1>
+        <h1>AgentLens</h1>
         <div className="controls">
           <button className="icon" onClick={() => {
             if (overlay) setSidebarHover(!sidebarHover);

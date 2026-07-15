@@ -1,4 +1,4 @@
-module openaimock
+module agentlens
 
 go 1.25.1
 

@@ -1,17 +1,11 @@
 # Binary
-openaimock.exe
-openaimock.exe~
+agentlens.exe
+agentlens.exe~
 
 # Database (contains API keys and request logs)
-openaimock.db
-openaimock.db-wal
-openaimock.db-shm
-
-# Old format backups (from migration)
-state.json
-state.json.bak
-logs.jsonl
-logs.jsonl.bak
+agentlens.db
+agentlens.db-wal
+agentlens.db-shm
 
 # Node
 web/node_modules/

@@ -1,6 +1,6 @@
-# OpenAI Mock Inspector
+# AgentLens
 
-一个可观测的 OpenAI 兼容接口 mock / 中转站。单文件部署，内置可视化检视台。
+观测 agent 与 LLM 交互的检视台 —— 拦截 OpenAI 兼容调用，可视化查看上下文、工具与 token。单文件部署，内置 mock / 中转 / 自定义响应。
 
 ![检视台界面](media/screen.png)
 
@@ -12,7 +12,7 @@
 - **可视化检视台**：浏览器查看请求/响应详情，支持 Human 视图和 JSON 视图切换
 - **Provider 管理**：保存多个中转目标，随时切换
 - **Token 统计**：自动提取输入/输出/缓存 token 及命中率
-- **SQLite 持久化**：所有数据（请求、配置、自定义响应）存储在单个 `openaimock.db`，可配置保留条数
+- **SQLite 持久化**：所有数据（请求、配置、自定义响应）存储在单个 `agentlens.db`，可配置保留条数
 - **国际化**：检视台支持中英文切换
 - **主题切换**：支持亮色 / 暗色 / 跟随系统
 
@@ -24,10 +24,10 @@
 
 | 平台 | 文件 |
 |------|------|
-| Windows | `openaimock-windows-amd64.exe` |
-| Linux | `openaimock-linux-amd64` |
-| macOS (Intel) | `openaimock-darwin-amd64` |
-| macOS (Apple Silicon) | `openaimock-darwin-arm64` |
+| Windows | `agentlens-windows-amd64.exe` |
+| Linux | `agentlens-linux-amd64` |
+| macOS (Intel) | `agentlens-darwin-amd64` |
+| macOS (Apple Silicon) | `agentlens-darwin-arm64` |
 
 下载后直接运行，无需安装任何环境。
 
@@ -38,10 +38,10 @@
 cd web && npm install && npm run build && cd ..
 
 # 构建后端（前端产物会嵌入二进制）
-go build -o openaimock.exe .
+go build -o agentlens.exe .
 
 # 运行
-./openaimock.exe
+./agentlens.exe
 ```
 
 ### 本地开发
@@ -142,7 +142,7 @@ resp = client.chat.completions.create(
 
 ## 数据存储
 
-所有数据存储在单个 SQLite 数据库 `openaimock.db` 中，运行时自动生成：
+所有数据存储在单个 SQLite 数据库 `agentlens.db` 中，运行时自动生成：
 
 | 表 | 内容 |
 |------|------|
@@ -150,11 +150,7 @@ resp = client.chat.completions.create(
 | `config` | Provider 配置、模式、最大记录数 |
 | `custom_responses` | 按请求 hash 绑定的自定义响应 |
 
-保留条数可在 ⚙ 设置 -> 通用设置 中配置（默认 50 条）。
-
-### 从旧版本迁移
-
-首次启动时，服务会自动将旧版的 `state.json` 和 `logs.jsonl` 迁移到数据库，原文件重命名为 `.bak`。删除 `openaimock.db` 可重置所有配置和记录。
+保留条数可在 ⚙ 设置 -> 通用设置 中配置（默认 50 条）。删除 `agentlens.db` 可重置所有配置和记录。
 
 ## 项目结构
 

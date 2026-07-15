@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 export type Lang = 'en' | 'cn';
 
-const STORAGE_KEY = 'openaimock.lang';
+const STORAGE_KEY = 'agentlens.lang';
 let currentLang: Lang = (localStorage.getItem(STORAGE_KEY) as Lang) || 'en';
 const listeners = new Set<() => void>();
 
@@ -120,7 +120,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'settings.cancel_edit': 'Cancel Edit',
     'settings.save': 'Save',
     'settings.max_records': 'Log Retention',
-    'settings.max_records_label': 'Max records (persisted to logs.jsonl)',
+    'settings.max_records_label': 'Max records (persisted to agentlens.db)',
     'settings.close': 'Close',
     'settings.name_required': 'Name is required',
     'settings.saved': 'Saved',
@@ -231,7 +231,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'settings.cancel_edit': '取消编辑',
     'settings.save': '保存',
     'settings.max_records': '日志保留条数',
-    'settings.max_records_label': '最大保存记录数（日志会持久化到 logs.jsonl）',
+    'settings.max_records_label': '最大保存记录数（持久化到 agentlens.db）',
     'settings.close': '关闭',
     'settings.name_required': '请填写名称',
     'settings.saved': '已保存',

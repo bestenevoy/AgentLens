@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 export type Theme = 'light' | 'dark' | 'auto';
 
-const STORAGE_KEY = 'openaimock.theme';
+const STORAGE_KEY = 'agentlens.theme';
 let currentTheme: Theme = (localStorage.getItem(STORAGE_KEY) as Theme) || 'auto';
 const listeners = new Set<() => void>();
 

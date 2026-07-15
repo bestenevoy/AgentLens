@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log"
-	"os"
 	"strings"
 	"time"
 
@@ -78,13 +77,7 @@ type RequestListItem struct {
 	CachedTokens      int     `json:"cached_tokens,omitempty"`
 }
 
-// PersistState 旧格式（仅用于迁移）
-type PersistState struct {
-	Config          ServerConfig               `json:"config"`
-	CustomResponses map[string]json.RawMessage `json:"custom_responses"`
-}
-
-const dbFile = "openaimock.db"
+const dbFile = "agentlens.db"
 
 // Store 全局存储（基于 SQLite）
 type Store struct {
@@ -112,7 +105,6 @@ func (s *Store) Load() {
 
 	s.db = db
 	s.createTables()
-	s.migrateOldFormat()
 	s.ensureDefaultConfig()
 }
 
@@ -161,65 +153,6 @@ func (s *Store) createTables() {
 	`
 	if _, err := s.db.Exec(schema); err != nil {
 		log.Fatalf("Failed to create tables: %v", err)
-	}
-}
-
-// migrateOldFormat 从旧的 state.json + logs.jsonl 迁移到 SQLite
-func (s *Store) migrateOldFormat() {
-	// 迁移 state.json
-	if data, err := os.ReadFile("state.json"); err == nil {
-		var ps PersistState
-		if json.Unmarshal(data, &ps) == nil {
-			if ps.Config.Mode == "" {
-				ps.Config.Mode = "mock"
-			}
-			if ps.Config.MaxRecords <= 0 {
-				ps.Config.MaxRecords = 50
-			}
-			if ps.Config.Providers == nil {
-				ps.Config.Providers = []Provider{}
-			}
-			configData, _ := json.Marshal(ps.Config)
-			s.db.Exec("INSERT OR REPLACE INTO config (id, data) VALUES (1, ?)", string(configData))
-
-			for hash, resp := range ps.CustomResponses {
-				respData, _ := json.Marshal(resp)
-				s.db.Exec("INSERT OR REPLACE INTO custom_responses (hash, response) VALUES (?, ?)", hash, string(respData))
-			}
-			log.Println("Migrated state.json -> SQLite")
-		}
-		os.Rename("state.json", "state.json.bak")
-	}
-
-	// 迁移 logs.jsonl
-	if f, err := os.Open("logs.jsonl"); err == nil {
-		count := 0
-		scanner := bufio.NewScanner(f)
-		scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024)
-		for scanner.Scan() {
-			line := scanner.Bytes()
-			if len(line) == 0 {
-				continue
-			}
-			var r RequestRecord
-			if json.Unmarshal(line, &r) == nil {
-				// 补充 model 和 messages_count
-				var body map[string]any
-				if json.Unmarshal(r.Body, &body) == nil {
-					if m, ok := body["model"].(string); ok {
-						r.Model = m
-					}
-					if msgs, ok := body["messages"].([]any); ok {
-						r.MessagesCount = len(msgs)
-					}
-				}
-				s.insertRecord(r)
-				count++
-			}
-		}
-		f.Close()
-		os.Rename("logs.jsonl", "logs.jsonl.bak")
-		log.Printf("Migrated %d records from logs.jsonl -> SQLite\n", count)
 	}
 }
 
