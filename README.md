@@ -1,231 +1,233 @@
 # OpenAI Mock Inspector
 
-一个可观测的 OpenAI 兼容接口 mock / 中转站。单文件部署，内置可视化检视台。
+An observable OpenAI-compatible API mock / proxy. Single-file deployment with a built-in visual inspection console.
 
-![检视台界面](media/screen.png)
+![Inspector Console](media/screen.png)
 
-## 功能
+> 中文文档请见 [README_zh.md](README_zh.md)
 
-- **Mock 模式**：接收任意 OpenAI 格式请求，返回合法响应，不调用真实 LLM
-- **Proxy 模式**：将请求转发到真实 OpenAI 兼容端点（OpenAI / DeepSeek / ARK 等），同时记录上下游内容
-- **Custom 响应**：按请求 hash 绑定自定义响应，相同对话命中后直接返回
-- **可视化检视台**：浏览器查看请求/响应详情，支持 Human 视图和 JSON 视图切换
-- **Provider 管理**：保存多个中转目标，随时切换
-- **Token 统计**：自动提取输入/输出/缓存 token 及命中率
-- **日志持久化**：请求记录保存到 `logs.jsonl`，可配置保留条数
+## Features
 
-## 快速开始
+- **Mock Mode**: Accepts any OpenAI-format request and returns a valid response without calling a real LLM
+- **Proxy Mode**: Forwards requests to a real OpenAI-compatible endpoint (OpenAI / DeepSeek / ARK, etc.) while recording both upstream and downstream content
+- **Custom Responses**: Bind a custom response to a request hash; subsequent identical conversations return the response directly
+- **Visual Inspection Console**: View request/response details in the browser with switchable Human and JSON views
+- **Provider Management**: Save multiple proxy targets and switch between them at any time
+- **Token Statistics**: Automatically extracts input/output/cache tokens and cache hit rate
+- **Log Persistence**: Request records are saved to `logs.jsonl` with configurable retention
 
-### 从 Release 下载（推荐）
+## Quick Start
 
-到 [Releases 页面](../../releases) 下载对应平台的可执行文件：
+### Download from Release (Recommended)
 
-| 平台 | 文件 |
-|------|------|
+Visit the [Releases page](../../releases) and download the executable for your platform:
+
+| Platform | File |
+|----------|------|
 | Windows | `openaimock-windows-amd64.exe` |
 | Linux | `openaimock-linux-amd64` |
 | macOS (Intel) | `openaimock-darwin-amd64` |
 | macOS (Apple Silicon) | `openaimock-darwin-arm64` |
 
-下载后直接运行，无需安装任何环境。
+Run directly after download — no runtime environment required.
 
-### 从源码构建
+### Build from Source
 
 ```bash
-# 构建前端
+# Build the frontend
 cd web && npm install && npm run build && cd ..
 
-# 构建后端（前端产物会嵌入二进制）
+# Build the backend (frontend assets are embedded into the binary)
 go build -o openaimock.exe .
 
-# 运行
+# Run
 ./openaimock.exe
 ```
 
-### 本地开发
+### Local Development
 
 ```bash
-# 终端 1：启动 Go 后端（API + 静态文件）
+# Terminal 1: Start the Go backend (API + static files)
 go run .
 
-# 终端 2：启动前端热更新（http://localhost:5173/admin/）
+# Terminal 2: Start the frontend dev server with HMR (http://localhost:5173/admin/)
 cd web && npm run dev
 ```
 
-启动后：
+After starting:
 
-| 入口 | 地址 |
-|------|------|
-| OpenAI 接口 | `http://localhost:12010/v1` |
-| 可视化 UI（生产） | `http://localhost:12010/admin/` |
-| 可视化 UI（开发） | `http://localhost:5173/admin/` |
+| Entry | URL |
+|-------|-----|
+| OpenAI API | `http://localhost:12010/v1` |
+| Visual UI (production) | `http://localhost:12010/admin/` |
+| Visual UI (development) | `http://localhost:5173/admin/` |
 
-## 使用方式
+## Usage
 
-### 1. Mock 模式（默认）
+### 1. Mock Mode (Default)
 
-无需配置。客户端指向 mock 服务即可：
+No configuration required. Just point your client to the mock service:
 
 ```python
 from openai import OpenAI
 client = OpenAI(
     base_url="http://localhost:12010/v1",
-    api_key="sk-anything",  # 任意值
+    api_key="sk-anything",  # any value
 )
 resp = client.chat.completions.create(
     model="deepseek-v4-flash",
-    messages=[{"role": "user", "content": "你好"}],
+    messages=[{"role": "user", "content": "Hello"}],
 )
 ```
 
-请求会记录在检视台中，响应自动生成（回显用户消息，带 tools 时返回 tool_calls）。
+Requests are recorded in the inspection console, and responses are generated automatically (echoing the user message; returns `tool_calls` when tools are present).
 
-### 2. Proxy 模式（中转真实 LLM）
+### 2. Proxy Mode (Forwarding to a Real LLM)
 
-1. 打开 `http://localhost:12010/admin/`
-2. 点击 ⚙ 设置 -> Provider 管理 -> 新增 Provider
-   - 名称：如 DeepSeek
-   - Base URL：如 `https://api.deepseek.com/v1`
-   - API Key：你的真实 key
-   - Override Model：留空保持原样，或填入替换的模型名
-3. 保存后点击「选用」
-4. 顶部模式切换为 `proxy`
+1. Open `http://localhost:12010/admin/`
+2. Click ⚙ Settings -> Provider Management -> Add Provider
+   - Name: e.g. DeepSeek
+   - Base URL: e.g. `https://api.deepseek.com/v1`
+   - API Key: your real key
+   - Override Model: leave blank to keep original, or fill in a replacement model name
+3. After saving, click "Use"
+4. Switch the top mode selector to `proxy`
 
-之后请求会被转发到真实 LLM，检视台同时显示客户端请求和 LLM 响应。
+Subsequent requests will be forwarded to the real LLM, and the inspection console displays both the client request and the LLM response.
 
-### 3. Custom 响应（固定某个对话的返回）
+### 3. Custom Response (Fixed Return for a Specific Conversation)
 
-1. 在检视台点击某条请求
-2. 点击「编辑自定义响应」
-3. 在编辑器中修改 JSON 响应
-4. 保存后，相同 hash 的后续请求直接返回此响应
+1. Click a request in the inspection console
+2. Click "Edit Custom Response"
+3. Modify the JSON response in the editor
+4. After saving, subsequent requests with the same hash will return this response directly
 
-## 检视台说明
+## Inspection Console
 
-### 区块
+### Sections
 
-每个请求详情包含以下区块，可点击标题折叠/展开：
+Each request detail contains the following sections — click the title to collapse/expand:
 
-| 区块 | 默认状态 | 折叠摘要 |
-|------|----------|----------|
-| 请求概要 | 折叠 | 模型 · 来源 · 耗时 |
-| 请求参数 | 折叠 | 参数名列表 |
-| Tools | 折叠 | 工具名列表 |
-| Messages | 展开 | - |
-| 转发到上游的请求 | 折叠 | model |
-| 上游响应 | 展开 | - |
-| 返回给客户端的响应 | 展开 | 响应摘要 |
+| Section | Default State | Collapsed Summary |
+|---------|---------------|-------------------|
+| Request Overview | Collapsed | Model · Source · Duration |
+| Request Parameters | Collapsed | Parameter name list |
+| Tools | Collapsed | Tool name list |
+| Messages | Expanded | - |
+| Forwarded Upstream Request | Collapsed | model |
+| Upstream Response | Expanded | - |
+| Response Returned to Client | Expanded | Response summary |
 
-每个区块右上角有「查看 JSON」按钮，切换原始 JSON / Human 视图。
+Each section has a "View JSON" button in the top-right corner to toggle between raw JSON and Human views.
 
-### 消息方向
+### Message Direction
 
-每条消息左侧有方向箭头：
+Each message has a direction arrow on the left:
 
-- **↑ 蓝色**：发给 LLM（system / user / tool）
-- **↓ 绿色**：LLM 返回（assistant）
+- **↑ Blue**: Sent to the LLM (system / user / tool)
+- **↓ Green**: Returned by the LLM (assistant)
 
-点击消息 header 可折叠（content 区域可自由选择和复制），折叠时显示内容摘要。
+Click the message header to collapse it (the content area remains freely selectable and copyable); when collapsed, a content summary is displayed.
 
-### Token 统计
+### Token Statistics
 
-- **列表项**：每条请求显示耗时（>500ms 用秒）、输入/输出 token、cache 命中率
-- **Header 统计**：所有请求的累计输入/输出/缓存 token 及总命中率
-- **请求概要**：展开后显示完整的 token 明细和缓存命中率
+- **List items**: Each request shows duration (seconds when >500ms), input/output tokens, and cache hit rate
+- **Header stats**: Cumulative input/output/cache tokens and overall hit rate across all requests
+- **Request overview**: Expanded view shows full token breakdown and cache hit rate
 
-### 侧边栏
+### Sidebar
 
-- 宽屏：侧边栏正常占位显示
-- 窄屏（<768px）：自动隐藏，鼠标靠近左侧边缘浮出，或点击 ☰ 按钮切换
+- Wide screens: Sidebar occupies space normally
+- Narrow screens (<768px): Auto-hidden; hovers out when the mouse approaches the left edge, or toggle with the ☰ button
 
-## 配置文件
+## Configuration Files
 
-运行时自动生成：
+Generated automatically at runtime:
 
-| 文件 | 内容 |
-|------|------|
-| `state.json` | Provider 配置、模式、自定义响应 |
-| `logs.jsonl` | 请求记录（每行一条 JSON） |
+| File | Contents |
+|------|----------|
+| `state.json` | Provider configs, mode, custom responses |
+| `logs.jsonl` | Request records (one JSON per line) |
 
-日志保留条数可在 ⚙ 设置 -> 通用设置 中配置（默认 50 条）。
+The log retention count is configurable in ⚙ Settings -> General Settings (default 50 entries).
 
-删除这两个文件可重置所有配置和记录。
+Delete both files to reset all configurations and records.
 
-## 项目结构
+## Project Structure
 
 ```
-├── main.go              # 路由 + embed 前端 + SPA fallback
-├── store.go             # 数据模型 + logs.jsonl 持久化
-├── handlers.go          # 请求处理 + admin API
-├── web/                 # React 前端
+├── main.go              # Routing + embedded frontend + SPA fallback
+├── store.go             # Data model + logs.jsonl persistence
+├── handlers.go          # Request handling + admin API
+├── web/                 # React frontend
 │   ├── src/
-│   │   ├── App.tsx      # 主应用
+│   │   ├── App.tsx      # Main app
 │   │   ├── components/  # Sidebar / Detail / SettingsModal / CustomEditor
-│   │   ├── api.ts       # API 调用
-│   │   ├── types.ts     # 类型定义
-│   │   └── utils.ts     # 工具函数
+│   │   ├── api.ts       # API wrappers
+│   │   ├── types.ts     # Type definitions
+│   │   └── utils.ts     # Utility functions
 │   ├── vite.config.ts   # base: /admin/ + dev proxy
 │   └── package.json
 ├── .github/workflows/
-│   ├── release-please.yml  # 自动 changelog + tag
-│   └── build.yml           # 多平台构建 + 上传 Release
+│   ├── release-please.yml  # Auto changelog + tag
+│   └── build.yml           # Multi-platform build + Release upload
 └── go.mod
 ```
 
-React 构建产物通过 `//go:embed` 嵌入二进制，编译后为单文件。
+The React build output is embedded into the binary via `//go:embed`, producing a single file after compilation.
 
-## 开发流程（Conventional Commits + 自动发版）
+## Development Workflow (Conventional Commits + Auto Release)
 
-项目使用 [release-please](https://github.com/googleapis/release-please) 自动管理版本和 changelog。
+The project uses [release-please](https://github.com/googleapis/release-please) to manage versions and changelog automatically.
 
-### Commit 格式
-
-```
-<类型>: <描述>
-
-feat:     新功能（触发 minor 版本升级）
-fix:      Bug 修复（触发 patch 版本升级）
-perf:     性能优化
-refactor: 重构
-ci:       CI/CD 变更
-docs:     文档
-chore:    其他
-```
-
-### 发版流程
+### Commit Format
 
 ```
-1. 从 main 创建分支开发
+<type>: <description>
+
+feat:     New feature (triggers minor version bump)
+fix:      Bug fix (triggers patch version bump)
+perf:     Performance improvement
+refactor: Code refactoring
+ci:       CI/CD changes
+docs:     Documentation
+chore:    Miscellaneous
+```
+
+### Release Flow
+
+```
+1. Create a branch from main for development
    git checkout main && git pull
    git checkout -b feat/some-feature
 
-2. 用 conventional commit 提交
-   git commit -m "feat: 添加某个功能"
+2. Commit with conventional commits
+   git commit -m "feat: add some feature"
 
-3. 创建 PR 合并到 main
+3. Create a PR to merge into main
 
-4. release-please 自动创建 "Release PR"（含 changelog）
-   - 多个 feat/fix 会累积在同一个 Release PR 中
-   - 你可以等全部开发完再合并
+4. release-please automatically creates a "Release PR" (with changelog)
+   - Multiple feat/fix commits accumulate in the same Release PR
+   - You can wait until all development is done before merging
 
-5. 合并 Release PR -> 自动创建 tag -> build.yml 自动构建发布
+5. Merge the Release PR -> auto-create tag -> build.yml auto-builds and publishes
 ```
 
-不需要手动 `git tag` 或 `git push origin v*`。
+No manual `git tag` or `git push origin v*` required.
 
-### CI/CD 说明
+### CI/CD Notes
 
-| Workflow | 职责 | 触发条件 |
-|----------|------|---------|
-| `release-please.yml` | 分析 commits，更新 CHANGELOG.md，创建 Release PR；合并后创建 tag + Release，自动构建多平台二进制上传 | push 到 main |
+| Workflow | Responsibility | Trigger |
+|----------|----------------|---------|
+| `release-please.yml` | Analyzes commits, updates CHANGELOG.md, creates Release PR; after merge, creates tag + Release and auto-builds multi-platform binaries for upload | Push to main |
 
-构建平台：
+Build platforms:
 
-| 平台 | Runner |
-|------|--------|
+| Platform | Runner |
+|----------|--------|
 | Windows amd64 | `windows-latest` |
 | Linux amd64 | `ubuntu-latest` |
 | macOS Intel | `macos-15-intel` |
 | macOS Apple Silicon | `macos-latest` |
 
-> **注意**：使用前需在 GitHub 仓库 Settings -> Actions -> General -> Workflow permissions 中开启 `Allow GitHub Actions to create and approve pull requests`。
+> **Note**: Before use, enable `Allow GitHub Actions to create and approve pull requests` in the GitHub repository's Settings -> Actions -> General -> Workflow permissions.
