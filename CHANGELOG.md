@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/bestenevoy/AgentLens/compare/v0.3.0...v0.4.0) (2026-07-15)
+
+
+### Features
+
+* 新增JSON树渲染和Markdown渲染组件，重构UI细节与布局 ([4d72412](https://github.com/bestenevoy/AgentLens/commit/4d7241286e5998836601425e2bf1f68e9582c8db))
+
 ## [0.3.0](https://github.com/bestenevoy/OpenAIMockInspector/compare/v0.2.1...v0.3.0) (2026-07-15)
 
 
