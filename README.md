@@ -14,7 +14,9 @@ An observable OpenAI-compatible API mock / proxy. Single-file deployment with a 
 - **Visual Inspection Console**: View request/response details in the browser with switchable Human and JSON views
 - **Provider Management**: Save multiple proxy targets and switch between them at any time
 - **Token Statistics**: Automatically extracts input/output/cache tokens and cache hit rate
-- **Log Persistence**: Request records are saved to `logs.jsonl` with configurable retention
+- **SQLite Persistence**: All data (requests, config, custom responses) is stored in a single `openaimock.db` with configurable retention
+- **i18n**: Switch between English and Chinese in the console
+- **Theme**: Light / Dark / Auto theme switching
 
 ## Quick Start
 
@@ -140,37 +142,41 @@ Click the message header to collapse it (the content area remains freely selecta
 - Wide screens: Sidebar occupies space normally
 - Narrow screens (<768px): Auto-hidden; hovers out when the mouse approaches the left edge, or toggle with the ☰ button
 
-## Configuration Files
+## Data Storage
 
-Generated automatically at runtime:
+All data is stored in a single SQLite database `openaimock.db`, generated automatically at runtime:
 
-| File | Contents |
-|------|----------|
-| `state.json` | Provider configs, mode, custom responses |
-| `logs.jsonl` | Request records (one JSON per line) |
+| Table | Contents |
+|-------|----------|
+| `requests` | Request records |
+| `config` | Provider configs, mode, max records |
+| `custom_responses` | Custom responses bound by request hash |
 
-The log retention count is configurable in ⚙ Settings -> General Settings (default 50 entries).
+The retention count is configurable in ⚙ Settings -> General Settings (default 50 entries).
 
-Delete both files to reset all configurations and records.
+### Migrating from old versions
+
+On first launch, the server automatically migrates legacy `state.json` and `logs.jsonl` files into the database, renaming the originals to `.bak`. Delete `openaimock.db` to reset all configurations and records.
 
 ## Project Structure
 
 ```
 ├── main.go              # Routing + embedded frontend + SPA fallback
-├── store.go             # Data model + logs.jsonl persistence
+├── store.go             # Data model + SQLite persistence
 ├── handlers.go          # Request handling + admin API
 ├── web/                 # React frontend
 │   ├── src/
 │   │   ├── App.tsx      # Main app
-│   │   ├── components/  # Sidebar / Detail / SettingsModal / CustomEditor
+│   │   ├── components/  # Sidebar / Detail / SettingsModal / CustomEditor / JsonTree / Markdown / ErrorBoundary
 │   │   ├── api.ts       # API wrappers
+│   │   ├── i18n.ts      # Internationalization (en/cn)
+│   │   ├── theme.ts     # Theme switching (light/dark/auto)
 │   │   ├── types.ts     # Type definitions
 │   │   └── utils.ts     # Utility functions
 │   ├── vite.config.ts   # base: /admin/ + dev proxy
 │   └── package.json
 ├── .github/workflows/
-│   ├── release-please.yml  # Auto changelog + tag
-│   └── build.yml           # Multi-platform build + Release upload
+│   └── release-please.yml  # Auto changelog + tag + multi-platform build
 └── go.mod
 ```
 
@@ -210,7 +216,7 @@ chore:    Miscellaneous
    - Multiple feat/fix commits accumulate in the same Release PR
    - You can wait until all development is done before merging
 
-5. Merge the Release PR -> auto-create tag -> build.yml auto-builds and publishes
+5. Merge the Release PR -> auto-create tag -> release-please.yml auto-builds and publishes
 ```
 
 No manual `git tag` or `git push origin v*` required.

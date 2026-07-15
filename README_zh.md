@@ -12,7 +12,9 @@
 - **可视化检视台**：浏览器查看请求/响应详情，支持 Human 视图和 JSON 视图切换
 - **Provider 管理**：保存多个中转目标，随时切换
 - **Token 统计**：自动提取输入/输出/缓存 token 及命中率
-- **日志持久化**：请求记录保存到 `logs.jsonl`，可配置保留条数
+- **SQLite 持久化**：所有数据（请求、配置、自定义响应）存储在单个 `openaimock.db`，可配置保留条数
+- **国际化**：检视台支持中英文切换
+- **主题切换**：支持亮色 / 暗色 / 跟随系统
 
 ## 快速开始
 
@@ -138,37 +140,41 @@ resp = client.chat.completions.create(
 - 宽屏：侧边栏正常占位显示
 - 窄屏（<768px）：自动隐藏，鼠标靠近左侧边缘浮出，或点击 ☰ 按钮切换
 
-## 配置文件
+## 数据存储
 
-运行时自动生成：
+所有数据存储在单个 SQLite 数据库 `openaimock.db` 中，运行时自动生成：
 
-| 文件 | 内容 |
+| 表 | 内容 |
 |------|------|
-| `state.json` | Provider 配置、模式、自定义响应 |
-| `logs.jsonl` | 请求记录（每行一条 JSON） |
+| `requests` | 请求记录 |
+| `config` | Provider 配置、模式、最大记录数 |
+| `custom_responses` | 按请求 hash 绑定的自定义响应 |
 
-日志保留条数可在 ⚙ 设置 -> 通用设置 中配置（默认 50 条）。
+保留条数可在 ⚙ 设置 -> 通用设置 中配置（默认 50 条）。
 
-删除这两个文件可重置所有配置和记录。
+### 从旧版本迁移
+
+首次启动时，服务会自动将旧版的 `state.json` 和 `logs.jsonl` 迁移到数据库，原文件重命名为 `.bak`。删除 `openaimock.db` 可重置所有配置和记录。
 
 ## 项目结构
 
 ```
 ├── main.go              # 路由 + embed 前端 + SPA fallback
-├── store.go             # 数据模型 + logs.jsonl 持久化
+├── store.go             # 数据模型 + SQLite 持久化
 ├── handlers.go          # 请求处理 + admin API
 ├── web/                 # React 前端
 │   ├── src/
 │   │   ├── App.tsx      # 主应用
-│   │   ├── components/  # Sidebar / Detail / SettingsModal / CustomEditor
+│   │   ├── components/  # Sidebar / Detail / SettingsModal / CustomEditor / JsonTree / Markdown / ErrorBoundary
 │   │   ├── api.ts       # API 调用
+│   │   ├── i18n.ts      # 国际化（中英文）
+│   │   ├── theme.ts     # 主题切换（亮/暗/跟随系统）
 │   │   ├── types.ts     # 类型定义
 │   │   └── utils.ts     # 工具函数
 │   ├── vite.config.ts   # base: /admin/ + dev proxy
 │   └── package.json
 ├── .github/workflows/
-│   ├── release-please.yml  # 自动 changelog + tag
-│   └── build.yml           # 多平台构建 + 上传 Release
+│   └── release-please.yml  # 自动 changelog + tag + 多平台构建
 └── go.mod
 ```
 
@@ -208,7 +214,7 @@ chore:    其他
    - 多个 feat/fix 会累积在同一个 Release PR 中
    - 你可以等全部开发完再合并
 
-5. 合并 Release PR -> 自动创建 tag -> build.yml 自动构建发布
+5. 合并 Release PR -> 自动创建 tag -> release-please.yml 自动构建发布
 ```
 
 不需要手动 `git tag` 或 `git push origin v*`。
