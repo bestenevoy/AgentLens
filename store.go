@@ -100,6 +100,10 @@ func (s *Store) Load() {
 		log.Fatalf("Failed to open database: %v", err)
 	}
 
+	// SQLite 不支持并发写入，限制连接池为单连接以避免 SQLITE_BUSY
+	// 同时确保 PRAGMA 对所有操作生效（PRAGMA 是 per-connection 的）
+	db.SetMaxOpenConns(1)
+
 	// SQLite 优化配置
 	db.Exec("PRAGMA journal_mode=WAL")
 	db.Exec("PRAGMA busy_timeout=5000")
